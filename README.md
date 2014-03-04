@@ -1,6 +1,11 @@
 #tess-two
 * * *
 
+A fork of tess-two from rmtheis/tess-two. 
+(Plan to) add ChoiceIterator.
+
+tess-two
+========
 A fork of Tesseract Tools for Android ([tesseract-android-tools](http://code.google.com/p/tesseract-android-tools/)) that adds some 
 additional functions. Tesseract Tools for Android is a set of Android APIs and
 build files for the [Tesseract OCR](https://code.google.com/p/tesseract-ocr/) and [Leptonica](http://www.leptonica.com/) image processing libraries.
