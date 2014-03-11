@@ -48,6 +48,48 @@ jfloat Java_com_googlecode_tesseract_android_ResultIterator_nativeConfidence(JNI
   return (jfloat) resultIterator->Confidence(enumLevel);
 }
 
+jobjectArray Java_com_googlecode_tesseract_android_ResultIterator_nativeGetChoices(JNIEnv *env,
+    jobject thiz, jint nativeResultIterator, jint level, jboolean addConfidence) {
+
+  // Get the actual result iterator and level (as C objects)
+  PageIteratorLevel enumLevel = (PageIteratorLevel) level;
+  ResultIterator *resultIterator = (ResultIterator *) nativeResultIterator;
+  bool addConf = (bool)(addConfidence != JNI_FALSE);
+
+  // Create a choice iterator to determine to the number of alternatives
+  tesseract::ChoiceIterator ci(*resultIterator);
+  int numberOfAlternatives = 0;
+  do { numberOfAlternatives++; } while(ci.Next());
+
+  // Create a string array to hold the results
+  jobjectArray ret = (jobjectArray) env->NewObjectArray(numberOfAlternatives, env->FindClass("java/lang/String"), env->NewStringUTF(""));
+
+  // save each result to the output array
+  int i = 0;
+  tesseract::ChoiceIterator cb(*resultIterator);
+  do {
+	  // create the string output
+	  const char * utfText = cb.GetUTF8Text();
+
+	  // add each string to the object array elements
+	  if(addConf) {
+		  char newString [strlen(utfText) + 5];
+		  sprintf(newString, "%s|%.2f", utfText, cb.Confidence());
+		  env->SetObjectArrayElement(ret, i, env->NewStringUTF(newString));
+	  } else {
+		  env->SetObjectArrayElement(ret, i, env->NewStringUTF(utfText));
+	  }
+
+	  // move to the next element in the list
+	  i++;
+
+  } while(cb.Next());
+
+  // return the string array
+  return ret;
+
+}
+
 #ifdef __cplusplus
 }
 #endif  /* __cplusplus */
