@@ -136,11 +136,13 @@ void fill_heights(TO_ROW *row, float gradient, int min_height,
 float make_single_row(ICOORD page_tr, TO_BLOCK* block,
                       TO_BLOCK_LIST* blocks);
 float make_rows(ICOORD page_tr,              // top right
-                TO_BLOCK_LIST *port_blocks);
+                TO_BLOCK_LIST *port_blocks,
+                BOOL8 use_cjk_rows);	 //use cjk approximations of height, ascender and descender values
 void make_initial_textrows(ICOORD page_tr,
                            TO_BLOCK *block,  // block to do
                            FCOORD rotation,  // for drawing
-                           BOOL8 testing_on);  // correct orientation
+                           BOOL8 testing_on,  // correct orientation
+                           BOOL8 use_cjk_rows);	 //use cjk approximations of height, ascender and descender values
 void fit_lms_line(TO_ROW *row);
 void compute_page_skew(TO_BLOCK_LIST *blocks,  // list of blocks
                        float &page_m,          // average gradient
@@ -151,13 +153,16 @@ void cleanup_rows_making(ICOORD page_tr,     // top right
                          float gradient,     // gradient to fit
                          FCOORD rotation,    // for drawing
                          inT32 block_edge,   // edge of block
-                         BOOL8 testing_on);  // correct orientation
+                         BOOL8 testing_on,  // correct orientation
+                         BOOL8 use_cjk_rows);		//use cjk approximations of height, ascender and descender values
+
 void delete_non_dropout_rows(                   //find lines
                              TO_BLOCK *block,   //block to do
                              float gradient,    //global skew
                              FCOORD rotation,   //deskew vector
                              inT32 block_edge,  //left edge
-                             BOOL8 testing_on   //correct orientation
+                             BOOL8 testing_on,  //correct orientation
+                             BOOL8 use_cjk_rows		//use cjk approximations of height, ascender and descender values
                             );
 BOOL8 find_best_dropout_row(                    //find neighbours
                             TO_ROW *row,        //row to test
@@ -197,10 +202,12 @@ void expand_rows(                   //find lines
                  float gradient,    //gradient to fit
                  FCOORD rotation,   //for drawing
                  inT32 block_edge,  //edge of block
-                 BOOL8 testing_on   //correct orientation
+                 BOOL8 testing_on,  //correct orientation
+                 BOOL8 use_cjk_rows		//use cjk approximations of height, ascender and descender values
                 );
 void adjust_row_limits(                 //tidy limits
-                       TO_BLOCK *block  //block to do
+                       TO_BLOCK *block, //block to do
+                       BOOL8 use_cjk_rows		//use cjk approximations of height, ascender and descender values
                       );
 void compute_row_stats(                  //find lines
                        TO_BLOCK *block,  //block to do
@@ -235,7 +242,9 @@ void separate_underlines(TO_BLOCK *block,  // block to do
 void pre_associate_blobs( ICOORD page_tr,   // top right
                          TO_BLOCK *block,  // block to do
                          FCOORD rotation,  // inverse landscape
-                         BOOL8 testing_on);  // correct orientation
+                         BOOL8 testing_on,  // correct orientation
+                         BOOL8 use_cjk_rows);		//use cjk approximations of height, ascender and descender values
+
 void fit_parallel_rows(TO_BLOCK *block,   // block to do
                        float gradient,    // gradient to fit
                        FCOORD rotation,   // for drawing
@@ -263,7 +272,8 @@ void assign_blobs_to_rows(                      //find lines
                           int pass,             //identification
                           BOOL8 reject_misses,  //chuck big ones out
                           BOOL8 make_new_rows,  //add rows for unmatched
-                          BOOL8 drawing_skew    //draw smoothed skew
+                          BOOL8 drawing_skew,   //draw smoothed skew
+                          BOOL8 use_cjk_rows			//use cjk approximations of height, ascender and descender values
                          );
                                  //find best row
 OVERLAP_STATE most_overlapping_row(TO_ROW_IT *row_it,  //iterator

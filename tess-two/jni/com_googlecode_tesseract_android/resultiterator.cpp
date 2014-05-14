@@ -72,7 +72,9 @@ jobjectArray Java_com_googlecode_tesseract_android_ResultIterator_nativeGetChoic
 	  const char * utfText = cb.GetUTF8Text();
 
 	  // add each string to the object array elements
-	  if(addConf) {
+	  if(utfText == NULL){
+		  env->SetObjectArrayElement(ret, i, env->NewStringUTF("?"));
+	  }else if(addConf) {
 		  char newString [strlen(utfText) + 5];
 		  sprintf(newString, "%s|%.2f", utfText, cb.Confidence());
 		  env->SetObjectArrayElement(ret, i, env->NewStringUTF(newString));

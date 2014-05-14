@@ -35,6 +35,14 @@ class CCStruct : public CUtil {
   static const double kAscenderFraction;   // = 0.25;
   // Derived value giving the x-height as a fraction of cap-height.
   static const double kXHeightCapRatio;    // = XHeight/(XHeight + Ascender).
+
+  // APPROXIMATIONS of the fractions of the CJK character cell taken by
+  // the descenders, ascenders, and x-height.
+  static const double kCJKDescenderFraction;	// = 0.1
+  static const double kCJKXHeightFraction;	// = 0.8
+  static const double kCJKAscenderFraction;	// = 0.1
+  static const double kCJKXHeightCapRatio;	// = CJKXHeight/(CJKXHeight + CJKAscender).
+
 };
 
 class Tesseract;

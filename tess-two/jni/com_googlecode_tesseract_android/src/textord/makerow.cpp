@@ -191,7 +191,7 @@ float make_single_row(ICOORD page_tr, TO_BLOCK* block, TO_BLOCK_LIST* blocks) {
  *
  * Arrange the blobs into rows.
  */
-float make_rows(ICOORD page_tr, TO_BLOCK_LIST *port_blocks) {
+float make_rows(ICOORD page_tr, TO_BLOCK_LIST *port_blocks, BOOL8 use_cjk_rows) {
   float port_m;                  // global skew
   float port_err;                // global noise
   TO_BLOCK_IT block_it;          // iterator
@@ -199,15 +199,16 @@ float make_rows(ICOORD page_tr, TO_BLOCK_LIST *port_blocks) {
   block_it.set_to_list(port_blocks);
   for (block_it.mark_cycle_pt(); !block_it.cycled_list();
        block_it.forward())
-  make_initial_textrows(page_tr, block_it.data(), FCOORD(1.0f, 0.0f),
-      !(BOOL8) textord_test_landscape);
+	  make_initial_textrows(page_tr, block_it.data(), FCOORD(1.0f, 0.0f),
+	      !(BOOL8) textord_test_landscape, use_cjk_rows);
                                  // compute globally
   compute_page_skew(port_blocks, port_m, port_err);
   block_it.set_to_list(port_blocks);
   for (block_it.mark_cycle_pt(); !block_it.cycled_list(); block_it.forward()) {
-    cleanup_rows_making(page_tr, block_it.data(), port_m, FCOORD(1.0f, 0.0f),
-                 block_it.data()->block->bounding_box().left(),
-                 !(BOOL8)textord_test_landscape);
+	    cleanup_rows_making(page_tr, block_it.data(), port_m, FCOORD(1.0f, 0.0f),
+	                 block_it.data()->block->bounding_box().left(),
+	                 !(BOOL8)textord_test_landscape,
+	                 use_cjk_rows);
   }
   return port_m;                 // global skew
 }
@@ -221,7 +222,8 @@ void make_initial_textrows(                  //find lines
                            ICOORD page_tr,
                            TO_BLOCK *block,  //block to do
                            FCOORD rotation,  //for drawing
-                           BOOL8 testing_on  //correct orientation
+                           BOOL8 testing_on,  //correct orientation
+                           BOOL8 use_cjk_rows //use cjk approximations of height, ascender and descender values
                           ) {
   TO_ROW_IT row_it = block->get_rows ();
 
@@ -234,7 +236,7 @@ void make_initial_textrows(                  //find lines
   }
 #endif
                                  //guess skew
-  assign_blobs_to_rows (block, NULL, 0, TRUE, TRUE, textord_show_initial_rows && testing_on);
+  assign_blobs_to_rows (block, NULL, 0, TRUE, TRUE, textord_show_initial_rows && testing_on, use_cjk_rows);
   row_it.move_to_first ();
   for (row_it.mark_cycle_pt (); !row_it.cycled_list (); row_it.forward ())
     fit_lms_line (row_it.data ());
@@ -521,7 +523,8 @@ void cleanup_rows_making(                   //find lines
                   float gradient,    //gradient to fit
                   FCOORD rotation,   //for drawing
                   inT32 block_edge,  //edge of block
-                  BOOL8 testing_on  //correct orientation
+                  BOOL8 testing_on,  //correct orientation
+                  BOOL8 use_cjk_rows //use cjk approximations of height, ascender and descender values
                  ) {
                                  //iterators
   BLOBNBOX_IT blob_it = &block->blobs;
@@ -543,24 +546,25 @@ void cleanup_rows_making(                   //find lines
                           gradient,
                           rotation,
                           block_edge,
-                          textord_show_parallel_rows &&testing_on);
-  expand_rows(page_tr, block, gradient, rotation, block_edge, testing_on);
+                          textord_show_parallel_rows &&testing_on,
+                          use_cjk_rows);
+  expand_rows(page_tr, block, gradient, rotation, block_edge, testing_on,use_cjk_rows);
   blob_it.set_to_list (&block->blobs);
   row_it.set_to_list (block->get_rows ());
   for (row_it.mark_cycle_pt (); !row_it.cycled_list (); row_it.forward ())
     blob_it.add_list_after (row_it.data ()->blob_list ());
   //give blobs back
-  assign_blobs_to_rows (block, &gradient, 1, FALSE, FALSE, FALSE);
+  assign_blobs_to_rows (block, &gradient, 1, FALSE, FALSE, FALSE, use_cjk_rows);
   //now new rows must be genuine
   blob_it.set_to_list (&block->blobs);
   blob_it.add_list_after (&block->large_blobs);
-  assign_blobs_to_rows (block, &gradient, 2, TRUE, TRUE, FALSE);
+  assign_blobs_to_rows (block, &gradient, 2, TRUE, TRUE, FALSE, use_cjk_rows);
   //safe to use big ones now
   blob_it.set_to_list (&block->blobs);
                                  //throw all blobs in
   blob_it.add_list_after (&block->noise_blobs);
   blob_it.add_list_after (&block->small_blobs);
-  assign_blobs_to_rows (block, &gradient, 3, FALSE, FALSE, FALSE);
+  assign_blobs_to_rows (block, &gradient, 3, FALSE, FALSE, FALSE, use_cjk_rows);
 }
 
 /**
@@ -573,7 +577,8 @@ void delete_non_dropout_rows(                   //find lines
                              float gradient,    //global skew
                              FCOORD rotation,   //deskew vector
                              inT32 block_edge,  //left edge
-                             BOOL8 testing_on   //correct orientation
+                             BOOL8 testing_on,  //correct orientation
+                             BOOL8 use_cjk_rows		//use cjk approximations of height, ascender and descender values
                             ) {
   TBOX block_box;                 //deskewed block
   inT32 *deltas;                 //change in occupation
@@ -612,14 +617,28 @@ void delete_non_dropout_rows(                   //find lines
     MEMORY_OUT.error ("compute_line_spacing", ABORT, NULL);
 
   compute_line_occupation(block, gradient, min_y, max_y, occupation, deltas);
-  compute_occupation_threshold ((inT32)
-    ceil (block->line_spacing *
-    (tesseract::CCStruct::kDescenderFraction +
-    tesseract::CCStruct::kAscenderFraction)),
-    (inT32) ceil (block->line_spacing *
-    (tesseract::CCStruct::kXHeightFraction +
-    tesseract::CCStruct::kAscenderFraction)),
-    max_y - min_y + 1, occupation, deltas);
+
+  // Determine the occupation thresholds. Note that CJK characters have a different ascender and descender fractions
+  if(use_cjk_rows){
+	  compute_occupation_threshold (
+		(inT32) ceil (block->line_spacing *
+	    		(tesseract::CCStruct::kCJKDescenderFraction + tesseract::CCStruct::kCJKAscenderFraction)),
+	    (inT32) ceil (block->line_spacing *
+	    		(tesseract::CCStruct::kCJKXHeightFraction + tesseract::CCStruct::kCJKAscenderFraction)),
+	    max_y - min_y + 1,
+	    occupation,
+	    deltas);
+  } else {
+	  compute_occupation_threshold (
+		(inT32) ceil (block->line_spacing *
+	    		(tesseract::CCStruct::kDescenderFraction + tesseract::CCStruct::kAscenderFraction)),
+	    (inT32) ceil (block->line_spacing *
+	    		(tesseract::CCStruct::kXHeightFraction + tesseract::CCStruct::kAscenderFraction)),
+	    max_y - min_y + 1,
+	    occupation,
+	    deltas);
+  }
+
 #ifndef GRAPHICS_DISABLED
   if (testing_on) {
     draw_occupation(xleft, ybottom, min_y, max_y, occupation, deltas);
@@ -972,7 +991,8 @@ void expand_rows(                   //find lines
                  float gradient,    //gradient to fit
                  FCOORD rotation,   //for drawing
                  inT32 block_edge,  //edge of block
-                 BOOL8 testing_on   //correct orientation
+                 BOOL8 testing_on,  //correct orientation
+                 BOOL8 use_cjk_rows		//use cjk approximations of height, ascender and descender values
                 ) {
   BOOL8 swallowed_row;           //eaten a neighbour
   float y_max, y_min;            //new row limits
@@ -990,13 +1010,13 @@ void expand_rows(                   //find lines
   }
 #endif
 
-  adjust_row_limits(block);  //shift min,max.
+  adjust_row_limits(block, use_cjk_rows);  //shift min,max.
   if (textord_new_initial_xheight) {
     if (block->get_rows ()->length () == 0)
       return;
     compute_row_stats(block, textord_show_expanded_rows &&testing_on);
   }
-  assign_blobs_to_rows (block, &gradient, 4, TRUE, FALSE, FALSE);
+  assign_blobs_to_rows (block, &gradient, 4, TRUE, FALSE, FALSE, use_cjk_rows);
   //get real membership
   if (block->get_rows ()->length () == 0)
     return;
@@ -1012,11 +1032,20 @@ void expand_rows(                   //find lines
     row = row_it.data ();
     y_max = row->max_y ();       //get current limits
     y_min = row->min_y ();
-    y_bottom = row->intercept () - block->line_size * textord_expansion_factor *
-      tesseract::CCStruct::kDescenderFraction;
-    y_top = row->intercept () + block->line_size * textord_expansion_factor *
-        (tesseract::CCStruct::kXHeightFraction +
-         tesseract::CCStruct::kAscenderFraction);
+
+    // Determine the top and bottom y values. Note that CJK values use different factors.
+    if(use_cjk_rows){
+	    y_bottom = row->intercept () - block->line_size * textord_expansion_factor *
+	    		tesseract::CCStruct::kCJKDescenderFraction;
+	    y_top = row->intercept () + block->line_size * textord_expansion_factor *
+	    		(tesseract::CCStruct::kCJKXHeightFraction + tesseract::CCStruct::kCJKAscenderFraction);
+	} else {
+	    y_bottom = row->intercept () - block->line_size * textord_expansion_factor *
+	    		tesseract::CCStruct::kDescenderFraction;
+	    y_top = row->intercept () + block->line_size * textord_expansion_factor *
+	    		(tesseract::CCStruct::kXHeightFraction + tesseract::CCStruct::kAscenderFraction);
+	}
+
     if (y_min > y_bottom) {      //expansion allowed
       if (textord_show_expanded_rows && testing_on)
         tprintf("Expanding bottom of row at %f from %f to %f\n",
@@ -1125,7 +1154,8 @@ void expand_rows(                   //find lines
  * Change the limits of rows to suit the default fractions.
  */
 void adjust_row_limits(                 //tidy limits
-                       TO_BLOCK *block  //block to do
+                       TO_BLOCK *block, //block to do
+                       BOOL8 use_cjk_rows		//use cjk approximations of height, ascender and descender values
                       ) {
   TO_ROW *row;                   //current row
   float size;                    //size of row
@@ -1143,12 +1173,20 @@ void adjust_row_limits(                 //tidy limits
     if (textord_show_expanded_rows)
       tprintf("Row at %f has min %f, max %f, size %f\n",
               row->intercept(), row->min_y(), row->max_y(), size);
-    size /= tesseract::CCStruct::kXHeightFraction +
-        tesseract::CCStruct::kAscenderFraction +
-        tesseract::CCStruct::kDescenderFraction;
-    ymax = size * (tesseract::CCStruct::kXHeightFraction +
-                   tesseract::CCStruct::kAscenderFraction);
-    ymin = -size * tesseract::CCStruct::kDescenderFraction;
+
+    // determine the size. Note the different fractions for CJK characters
+    if(use_cjk_rows){
+  	    size /= tesseract::CCStruct::kCJKXHeightFraction + tesseract::CCStruct::kCJKAscenderFraction +
+  	    		tesseract::CCStruct::kCJKDescenderFraction;
+  	    ymax = size * (tesseract::CCStruct::kCJKXHeightFraction + tesseract::CCStruct::kCJKAscenderFraction);
+  	    ymin = -size * tesseract::CCStruct::kCJKDescenderFraction;
+  	} else {
+  	    size /= tesseract::CCStruct::kXHeightFraction + tesseract::CCStruct::kAscenderFraction +
+  	    		tesseract::CCStruct::kDescenderFraction;
+  	    ymax = size * (tesseract::CCStruct::kXHeightFraction + tesseract::CCStruct::kAscenderFraction);
+  	    ymin = -size * tesseract::CCStruct::kDescenderFraction;
+  	}
+
     row->set_limits (row->intercept () + ymin, row->intercept () + ymax);
     row->merged = FALSE;
   }
@@ -1276,11 +1314,18 @@ void compute_row_stats(                  //find lines
  */
 namespace tesseract {
 void Textord::compute_block_xheight(TO_BLOCK *block, float gradient) {
-  TO_ROW *row;                          // current row
-  float asc_frac_xheight = CCStruct::kAscenderFraction /
-      CCStruct::kXHeightFraction;
-  float desc_frac_xheight = CCStruct::kDescenderFraction /
-      CCStruct::kXHeightFraction;
+
+	TO_ROW *row;                          // current row
+
+  // Get the height fractions of the descender and ascender. Note the difference for CJK characters
+  float asc_frac_xheight = CCStruct::kAscenderFraction / CCStruct::kXHeightFraction;
+  float desc_frac_xheight = CCStruct::kDescenderFraction / CCStruct::kXHeightFraction;
+  if(use_cjk_fp_model()){
+	  asc_frac_xheight = CCStruct::kCJKAscenderFraction / CCStruct::kCJKXHeightFraction;
+	  desc_frac_xheight = CCStruct::kCJKDescenderFraction / CCStruct::kCJKXHeightFraction;
+  }
+
+
   inT32 min_height, max_height;         // limits on xheight
   TO_ROW_IT row_it = block->get_rows();
   if (row_it.empty()) return;  // no rows
@@ -1353,7 +1398,11 @@ void Textord::compute_block_xheight(TO_BLOCK *block, float gradient) {
       xheight = row_cap_xheights.median() * CCStruct::kXHeightCapRatio;
     }
   } else {  // default block sizes
-    xheight = block->line_size * CCStruct::kXHeightFraction;
+	  if(use_cjk_fp_model()){
+		  xheight = block->line_size * CCStruct::kCJKXHeightFraction;
+	  }else {
+		  xheight = block->line_size * CCStruct::kXHeightFraction;
+	  }
   }
   // Correct xheight, ascrise and descdrop if necessary.
   bool corrected_xheight = false;
@@ -1870,7 +1919,8 @@ void pre_associate_blobs(                  //make rough chars
                          ICOORD page_tr,   //top right
                          TO_BLOCK *block,  //block to do
                          FCOORD rotation,  //inverse landscape
-                         BOOL8 testing_on  //correct orientation
+                         BOOL8 testing_on,  //correct orientation
+                         BOOL8 use_cjk_rows		//use cjk approximations of height, ascender and descender values
                         ) {
 #ifndef GRAPHICS_DISABLED
   ScrollView::Color colour;                 //of boxes
@@ -1917,10 +1967,16 @@ void pre_associate_blobs(                  //make rough chars
         }
       }
       while (overlap);
+
+      if(use_cjk_rows){
       blob->chop (&start_it, &blob_it,
         blob_rotation,
-        block->line_size * tesseract::CCStruct::kXHeightFraction *
-        textord_chop_width);
+        block->line_size * tesseract::CCStruct::kCJKXHeightFraction * textord_chop_width);
+      } else {
+      blob->chop (&start_it, &blob_it,
+        blob_rotation,
+        block->line_size * tesseract::CCStruct::kXHeightFraction * textord_chop_width);
+      }
       //attempt chop
     }
 #ifndef GRAPHICS_DISABLED
@@ -2306,7 +2362,8 @@ void assign_blobs_to_rows(                      //find lines
                           int pass,             //identification
                           BOOL8 reject_misses,  //chuck big ones out
                           BOOL8 make_new_rows,  //add rows for unmatched
-                          BOOL8 drawing_skew    //draw smoothed skew
+                          BOOL8 drawing_skew,   //draw smoothed skew
+                          BOOL8 use_cjk_rows	//use cjk approximations of height, ascender and descender values
                          ) {
   OVERLAP_STATE overlap_result;  //what to do with it
   float ycoord;                  //current y
@@ -2390,34 +2447,32 @@ void assign_blobs_to_rows(                      //find lines
           near_dist = row_it.data_relative (-1)->min_y () - top;
                                  //below bottom
           if (bottom < row->min_y ()) {
-            if (row->min_y () - bottom <=
-              (block->line_spacing -
-            block->line_size) * tesseract::CCStruct::kDescenderFraction) {
-                                 //done it
-              overlap_result = ASSIGN;
-              dest_row = row;
-            }
+  			if ((use_cjk_rows && row->min_y () - bottom <=
+  			  (block->line_spacing - block->line_size) * tesseract::CCStruct::kCJKDescenderFraction)
+  				|| (!use_cjk_rows && row->min_y () - bottom <=
+  		                (block->line_spacing - block->line_size) * tesseract::CCStruct::kDescenderFraction)) {
+                overlap_result = ASSIGN;
+                dest_row = row;
+              }
           }
-          else if (near_dist > 0
-          && near_dist < bottom - row->max_y ()) {
+          else if (near_dist > 0 && near_dist < bottom - row->max_y ()) {
             row_it.backward ();
             dest_row = row_it.data ();
-            if (dest_row->min_y () - bottom <=
-              (block->line_spacing -
-            block->line_size) * tesseract::CCStruct::kDescenderFraction) {
-                                 //done it
+            if ((use_cjk_rows && dest_row->min_y () - bottom <=
+              (block->line_spacing - block->line_size) * tesseract::CCStruct::kCJKDescenderFraction)
+            	|| (!use_cjk_rows && dest_row->min_y () - bottom <=
+                        (block->line_spacing - block->line_size) * tesseract::CCStruct::kDescenderFraction)) {
               overlap_result = ASSIGN;
             }
           }
           else {
-            if (top - row->max_y () <=
-              (block->line_spacing -
-              block->line_size) * (textord_overlap_x +
-            tesseract::CCStruct::kAscenderFraction)) {
-                                 //done it
-              overlap_result = ASSIGN;
-              dest_row = row;
-            }
+  			if ((use_cjk_rows && top - row->max_y () <=
+  			  (block->line_spacing - block->line_size) * (textord_overlap_x + tesseract::CCStruct::kCJKAscenderFraction))
+  				|| (!use_cjk_rows && top - row->max_y () <=
+  		                (block->line_spacing - block->line_size) * (textord_overlap_x + tesseract::CCStruct::kAscenderFraction))) {
+  			  overlap_result = ASSIGN;
+  			  dest_row = row;
+  			}
           }
         }
       }

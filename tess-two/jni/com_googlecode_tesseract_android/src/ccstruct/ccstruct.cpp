@@ -28,6 +28,14 @@ const double CCStruct::kAscenderFraction = 0.25;
 const double CCStruct::kXHeightCapRatio = CCStruct::kXHeightFraction /
     (CCStruct::kXHeightFraction + CCStruct::kAscenderFraction);
 
+// APPROXIMATIONS of the fractions of the CJK character cell taken by
+// the descenders, ascenders, and x-height.
+const double CCStruct::kCJKDescenderFraction = 0.1;
+const double CCStruct::kCJKXHeightFraction = 0.8;
+const double CCStruct::kCJKAscenderFraction = 0.1;
+const double CCStruct::kCJKXHeightCapRatio = CCStruct::kCJKXHeightFraction /
+    (CCStruct::kCJKXHeightFraction + CCStruct::kCJKAscenderFraction);
+
 CCStruct::CCStruct() {}
 
 CCStruct::~CCStruct() {

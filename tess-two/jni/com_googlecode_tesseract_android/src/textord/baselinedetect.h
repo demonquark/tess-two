@@ -163,7 +163,7 @@ class BaselineBlock {
   // TODO(rays/joeliu) This entire section of code is inherited from the past
   // and could be improved/eliminated.
   // page_tr is used to size a debug window.
-  void PrepareForSplineFitting(ICOORD page_tr, bool remove_noise);
+  void PrepareForSplineFitting(ICOORD page_tr, bool remove_noise, BOOL8 use_cjk_rows);
 
   // Fits splines to the textlines, or creates fake QSPLINES from the straight
   // baselines that are already on the TO_ROWs.

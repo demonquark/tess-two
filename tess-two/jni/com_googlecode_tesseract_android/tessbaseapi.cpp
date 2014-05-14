@@ -344,7 +344,6 @@ void Java_com_googlecode_tesseract_android_TessBaseAPI_nativeEnd(JNIEnv *env,
 void Java_com_googlecode_tesseract_android_TessBaseAPI_nativeSetDebug(JNIEnv *env,
                                                                       jobject thiz,
                                                                       jboolean debug) {
-
   native_data_t *nat = get_native_data(env, thiz);
 
   nat->debug = (debug == JNI_TRUE) ? TRUE : FALSE;
@@ -413,6 +412,29 @@ jint Java_com_googlecode_tesseract_android_TessBaseAPI_nativeGetWords(JNIEnv *en
   boxaDestroy(&boxa);
 
   return reinterpret_cast<jint>(pixa);
+}
+
+jint Java_com_googlecode_tesseract_android_TessBaseAPI_nativeGetConnectedComponents(JNIEnv *env,
+                                                                      jobject thiz) {
+
+  native_data_t *nat = get_native_data(env, thiz);;
+  PIXA *pixa = NULL;
+  BOXA *boxa;
+
+  boxa = nat->api.GetConnectedComponents(&pixa);
+  boxaDestroy(&boxa);
+
+  return reinterpret_cast<jint>(pixa);
+}
+
+jint Java_com_googlecode_tesseract_android_TessBaseAPI_nativeGetThresholdedImage(JNIEnv *env,
+                                                                           jobject thiz, jint page) {
+
+  native_data_t *nat = get_native_data(env, thiz);
+
+  PIX *pix = nat->api.GetThresholdedImage();
+
+  return (jint) pix;
 }
 
 jint Java_com_googlecode_tesseract_android_TessBaseAPI_nativeGetResultIterator(JNIEnv *env,

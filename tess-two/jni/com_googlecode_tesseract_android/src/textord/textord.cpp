@@ -315,7 +315,7 @@ void Textord::TextordPage(PageSegMode pageseg_mode, const FCOORD& reskew,
   float gradient;
   // Do it the old fashioned way.
   if (PSM_LINE_FIND_ENABLED(pageseg_mode)) {
-    gradient = make_rows(page_tr_, to_blocks);
+	gradient = make_rows(page_tr_, to_blocks, use_cjk_fp_model_);
   } else if (!PSM_SPARSE(pageseg_mode)) {
     // SINGLE_LINE, SINGLE_WORD and SINGLE_CHAR all need a single row.
     gradient = make_single_row(page_tr_, to_block, to_blocks);

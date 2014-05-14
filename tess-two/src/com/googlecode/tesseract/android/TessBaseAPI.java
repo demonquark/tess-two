@@ -99,9 +99,15 @@ public class TessBaseAPI {
     
     /** Save blob choices allowing us to get alternative results. */
     public static final String VAR_SAVE_BLOB_CHOICES = "save_blob_choices";
+    
+    /** Use CJK fixed pitch model. */
+    public static final String VAR_USE_CJK_FP_MODEL = "textord_use_cjk_fp_model";
 
-    /** Save blob choices allowing us to get alternative results. */
+    /** String value used to assign a boolean variable to true. */
     public static final String VAR_TRUE = "T";
+
+    /** String value used to assign a boolean variable to false. */
+    public static final String VAR_FALSE = "F";
 
     /** Run Tesseract only - fastest */
     public static final int OEM_TESSERACT_ONLY = 0;
@@ -483,6 +489,25 @@ public class TessBaseAPI {
     }
 
     /**
+     * Returns the connected components bounding boxes as a Pixa.
+     * Is the same as getting the component images (see GetComponentImages) for RIL_SYMBOL
+     * 
+     * @return Pixa containing connected components bounding boxes 
+     */
+    public Pixa getConnectedComponents() {
+        return new Pixa(nativeGetConnectedComponents(), 0, 0);
+    }
+
+    /**
+     * Returns an image representation of the thresholded image.
+     * 
+     * @return Pix containing the thresholded image 
+     */
+    public Pix getThresholdedImage() {
+        return new Pix(nativeGetThresholdedImage());
+    }
+
+    /**
      * Returns an iterator allowing you to iterate over the top result for each recognized word or symbol.
      * 
      * @return ResultIterator iterate over the words
@@ -602,6 +627,10 @@ public class TessBaseAPI {
     private native int nativeGetStrips();
 
     private native int nativeGetWords();
+    
+    private native int nativeGetConnectedComponents();
+
+    private native int nativeGetThresholdedImage();
 
     private native int nativeGetResultIterator();
     
