@@ -128,6 +128,9 @@ StrokeWidth::StrokeWidth(int gridsize,
   diacritics_win_ = NULL;
   textlines_win_ = NULL;
   smoothed_win_ = NULL;
+
+  // Strokewidth defaults to false
+  use_cjk_stroke_model_ = false;
 }
 
 StrokeWidth::~StrokeWidth() {
@@ -356,7 +359,6 @@ void StrokeWidth::GradeBlobsIntoPartitions(const FCOORD& rerotation,
                                            TO_BLOCK* block,
                                            Pix* nontext_pix,
                                            const DENORM* denorm,
-                                           bool cjk_script,
                                            TextlineProjection* projection,
                                            ColPartitionGrid* part_grid,
                                            ColPartition_LIST* big_parts) {
@@ -369,9 +371,8 @@ void StrokeWidth::GradeBlobsIntoPartitions(const FCOORD& rerotation,
   InsertBlobs(block);
 
   // Run FixBrokenCJK() again if the page is CJK.
-  if (cjk_script) {
-    FixBrokenCJK(block);
-  }
+  while (use_cjk_stroke_model_ && FixBrokenCJK(block));
+
   FindTextlineFlowDirection(true);
   projection_->ConstructProjection(block, rerotation, nontext_map_);
   if (textord_tabfind_show_strokewidths) {
@@ -1762,6 +1763,14 @@ void StrokeWidth::CompletePartition(ColPartition* part,
   bool debug = AlignedBlob::WithinTestRegion(2, box.left(),
                                              box.bottom());
   int value = projection_->EvaluateColPartition(*part, denorm_, debug);
+  // NOTE: hack to allow to force questionable CJK text to be recognized as text.
+  // Info about value: A value greater than 1 equals horizontal text, less than 1 equals vertical text.
+  // This is not always true for CJK, so let's ignore it.
+  if(use_cjk_stroke_model_){
+	  if(-1 <= value && value <= 1){
+		  value = 2;
+	  }
+  }
   part->SetRegionAndFlowTypesFromProjectionValue(value);
   part->ClaimBoxes();
   part_grid->InsertBBox(true, true, part);

@@ -345,8 +345,14 @@ float Textord::filter_noise_blobs(
   max_height = size_stats.ile (textord_initialasc_ile);
   //      tprintf("max_y=%g, min_y=%g, initial_x=%g, max_height=%g,",
   //              max_y,min_y,initial_x,max_height);
-  max_height *= tesseract::CCStruct::kXHeightCapRatio;
-  if (max_height > initial_x)
+
+  // KRIS - use different max height for CJK models
+  if(use_cjk_fp_model())
+	  max_height *= tesseract::CCStruct::kCJKXHeightCapRatio;
+  else
+	  max_height *= tesseract::CCStruct::kXHeightCapRatio;
+
+	  if (max_height > initial_x)
     initial_x = max_height;
   //      tprintf(" ret=%g\n",initial_x);
   return initial_x;

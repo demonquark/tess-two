@@ -112,10 +112,16 @@ class StrokeWidth : public BlobGrid {
                                 TO_BLOCK* block,
                                 Pix* nontext_pix,
                                 const DENORM* denorm,
-                                bool cjk_script,
                                 TextlineProjection* projection,
                                 ColPartitionGrid* part_grid,
                                 ColPartition_LIST* big_parts);
+
+  bool use_cjk_stroke_model() const {
+    return use_cjk_stroke_model_;
+  }
+  void set_use_cjk_stroke_model(bool flag) {
+	  use_cjk_stroke_model_ = flag;
+  }
 
   // Handles a click event in a display window.
   virtual void HandleClick(int x, int y);
@@ -280,6 +286,10 @@ class StrokeWidth : public BlobGrid {
                                 int x, int y, TO_BLOCK* block);
 
  private:
+
+  // KRIS - added for CJK scripts
+  bool use_cjk_stroke_model_;
+
   // Image map of photo/noise areas on the page. Borrowed pointer (not owned.)
   Pix* nontext_map_;
   // Textline projection map. Borrowed pointer.

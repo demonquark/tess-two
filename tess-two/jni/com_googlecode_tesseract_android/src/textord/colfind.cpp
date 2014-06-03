@@ -294,9 +294,11 @@ int ColumnFinder::FindBlocks(PageSegMode pageseg_mode,
   stroke_width_->RemoveLineResidue(&big_parts_);
   FindInitialTabVectors(NULL, min_gutter_width_, input_block);
   SetBlockRuleEdges(input_block);
+  stroke_width_->set_use_cjk_stroke_model(cjk_script_);
   stroke_width_->GradeBlobsIntoPartitions(rerotate_, input_block, nontext_map_,
-                                          denorm_, cjk_script_, &projection_,
+                                          denorm_, &projection_,
                                           &part_grid_, &big_parts_);
+
   if (!PSM_SPARSE(pageseg_mode)) {
     ImageFind::FindImagePartitions(photo_mask_pix, rotation_, rerotate_,
                                    input_block, this, &part_grid_, &big_parts_);
@@ -1491,6 +1493,9 @@ static void RotateAndExplodeBlobList(const FCOORD& blob_rotation,
     C_BLOB* cblob = blob->cblob();
     C_OUTLINE_LIST* outlines = cblob->out_list();
     C_OUTLINE_IT ol_it(outlines);
+
+    // KRIS - assume the CJK merged outlines are correct. (i.e. do NOT explode them)
+    /*
     if (!outlines->singleton()) {
       // This blob has multiple outlines from CJK repair.
       // Explode the blob back into individual outlines.
@@ -1509,10 +1514,22 @@ static void RotateAndExplodeBlobList(const FCOORD& blob_rotation,
       if (blob_rotation.x() != 1.0f || blob_rotation.y() != 0.0f) {
         cblob->rotate(blob_rotation);
       }
+
+      tprintf("RotateAndExplodeBlobList add one");
       blob->compute_bounding_box();
       widths->add(blob->bounding_box().width(), 1);
       heights->add(blob->bounding_box().height(), 1);
     }
+    */
+
+    if (blob_rotation.x() != 1.0f || blob_rotation.y() != 0.0f) {
+      cblob->rotate(blob_rotation);
+    }
+
+    blob->compute_bounding_box();
+    widths->add(blob->bounding_box().width(), 1);
+    heights->add(blob->bounding_box().height(), 1);
+
   }
 }
 
