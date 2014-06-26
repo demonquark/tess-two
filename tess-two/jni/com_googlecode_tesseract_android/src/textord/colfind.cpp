@@ -1515,7 +1515,6 @@ static void RotateAndExplodeBlobList(const FCOORD& blob_rotation,
         cblob->rotate(blob_rotation);
       }
 
-      tprintf("RotateAndExplodeBlobList add one");
       blob->compute_bounding_box();
       widths->add(blob->bounding_box().width(), 1);
       heights->add(blob->bounding_box().height(), 1);
