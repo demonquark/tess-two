@@ -117,8 +117,6 @@ static void InitFontconfig() {
         FLAGS_fontconfig_tmpdir.c_str(), "*cache-2").c_str());
   }
   tprintf("Initializing fontconfig\n");
-  string fonts_dir = File::JoinPath(
-      FLAGS_fonts_dir.c_str(), "google3/ocr/trainingdata/typesetting/testdata");
   const int MAX_FONTCONF_FILESIZE = 1024;
   char fonts_conf_template[MAX_FONTCONF_FILESIZE];
   snprintf(fonts_conf_template, MAX_FONTCONF_FILESIZE,
@@ -351,9 +349,7 @@ bool PangoFontInfo::CanRenderString(const char* utf8_word, int len,
   PangoLayout* layout;
   {
     // Pango is not relasing the cached layout.
-#ifndef USE_STD_NAMESPACE
     DISABLE_HEAP_LEAK_CHECK;
-#endif
     layout = pango_layout_new(context);
   }
   if (desc_) {
@@ -480,6 +476,10 @@ bool FontUtils::IsAvailableFont(const char* input_query_desc) {
     }
     g_object_unref(context);
   }
+  if (selected_font == NULL) {
+    pango_font_description_free(desc);
+    return false;
+  }
   PangoFontDescription* selected_desc = pango_font_describe(selected_font);
 
   bool equal = pango_font_description_equal(desc, selected_desc);
@@ -493,6 +493,7 @@ bool FontUtils::IsAvailableFont(const char* input_query_desc) {
 
   g_free(selected_desc_str);
   pango_font_description_free(selected_desc);
+  g_object_unref(selected_font);
   pango_font_description_free(desc);
   return equal;
 }

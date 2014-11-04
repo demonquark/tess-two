@@ -38,7 +38,7 @@ public class TessBaseAPI {
     /**
      * Used by the native implementation of the class.
      */
-    private int mNativeData;
+    private long mNativeData;
 
     static {
         System.loadLibrary("lept");
@@ -97,21 +97,6 @@ public class TessBaseAPI {
     /** Blacklist of characters to not recognize. */
     public static final String VAR_CHAR_BLACKLIST = "tessedit_char_blacklist";
     
-    /** Save blob choices allowing us to get alternative results. */
-    public static final String VAR_SAVE_BLOB_CHOICES = "save_blob_choices";
-    
-    /** Use CJK fixed pitch model. */
-    public static final String VAR_USE_CJK_FP_MODEL = "textord_use_cjk_fp_model";
-
-    /** Use CJK fixed pitch model. */
-    public static final String VAR_EDGES_MAX_CHILD_OUTLINE = "edges_max_children_per_outline";
-
-    /** String value used to assign a boolean variable to true. */
-    public static final String VAR_TRUE = "T";
-
-    /** String value used to assign a boolean variable to false. */
-    public static final String VAR_FALSE = "F";
-
     /** Run Tesseract only - fastest */
     public static final int OEM_TESSERACT_ONLY = 0;
     
@@ -239,7 +224,7 @@ public class TessBaseAPI {
      * @param datapath the parent directory of tessdata ending in a forward
      *            slash
      * @param language (optional) an ISO 639-3 string representing the language(s)
-     * @param mode the OCR engine mode to be set
+     * @param ocrEngineMode the OCR engine mode to be set
      * @return <code>true</code> on success
      */
     public boolean init(String datapath, String language, int ocrEngineMode) {
@@ -452,6 +437,16 @@ public class TessBaseAPI {
     }
 
     /**
+     * Return a copy of the internal thresholded image from Tesseract.
+     * Only available after setImage.
+     * 
+     * @return Pix containing the thresholded image
+     */
+    public Pix getThresholdedImage() {
+        return new Pix(nativeGetThresholdedImage());
+    }
+    
+    /**
      * Returns the result of page layout analysis as a Pixa, in reading order.
      * 
      * @return Pixa contaning page layout bounding boxes
@@ -468,7 +463,7 @@ public class TessBaseAPI {
      * @return Pixa containing textlines
      */
     public Pixa getTextlines() {
-	return new Pixa(nativeGetTextlines(), 0, 0);
+        return new Pixa(nativeGetTextlines(), 0, 0);
     }
     
     /**
@@ -479,7 +474,7 @@ public class TessBaseAPI {
      * @return Pixa containing strips
      */
     public Pixa getStrips() {
-	return new Pixa(nativeGetStrips(), 0, 0);
+        return new Pixa(nativeGetStrips(), 0, 0);
     }    
     
     /**
@@ -491,32 +486,8 @@ public class TessBaseAPI {
         return new Pixa(nativeGetWords(), 0, 0);
     }
 
-    /**
-     * Returns the connected components bounding boxes as a Pixa.
-     * Is the same as getting the component images (see GetComponentImages) for RIL_SYMBOL
-     * 
-     * @return Pixa containing connected components bounding boxes 
-     */
-    public Pixa getConnectedComponents() {
-        return new Pixa(nativeGetConnectedComponents(), 0, 0);
-    }
-
-    /**
-     * Returns an image representation of the thresholded image.
-     * 
-     * @return Pix containing the thresholded image 
-     */
-    public Pix getThresholdedImage() {
-        return new Pix(nativeGetThresholdedImage());
-    }
-
-    /**
-     * Returns an iterator allowing you to iterate over the top result for each recognized word or symbol.
-     * 
-     * @return ResultIterator iterate over the words
-     */
     public ResultIterator getResultIterator() {
-        int nativeResultIterator = nativeGetResultIterator();
+        long nativeResultIterator = nativeGetResultIterator();
 
         if (nativeResultIterator == 0) {
             return null;
@@ -607,7 +578,7 @@ public class TessBaseAPI {
     private native void nativeSetImageBytes(
             byte[] imagedata, int width, int height, int bpp, int bpl);
 
-    private native void nativeSetImagePix(int nativePix);
+    private native void nativeSetImagePix(long nativePix);
 
     private native void nativeSetRectangle(int left, int top, int width, int height);
 
@@ -623,19 +594,17 @@ public class TessBaseAPI {
 
     private native void nativeSetPageSegMode(int mode);
     
-    private native int nativeGetRegions();
-
-    private native int nativeGetTextlines();
-
-    private native int nativeGetStrips();
-
-    private native int nativeGetWords();
+    private native long nativeGetThresholdedImage();
     
-    private native int nativeGetConnectedComponents();
+    private native long nativeGetRegions();
 
-    private native int nativeGetThresholdedImage();
+    private native long nativeGetTextlines();
 
-    private native int nativeGetResultIterator();
+    private native long nativeGetStrips();
+
+    private native long nativeGetWords();
+
+    private native long nativeGetResultIterator();
     
     private native String nativeGetBoxText(int page_number);
     

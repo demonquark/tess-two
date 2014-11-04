@@ -16,12 +16,6 @@
 
 package com.googlecode.tesseract.android;
 
-import java.util.ArrayList;
-import java.util.List;
-
-import android.util.Log;
-import android.util.Pair;
-
 import com.googlecode.tesseract.android.TessBaseAPI.PageIteratorLevel;
 
 /**
@@ -38,14 +32,12 @@ public class ResultIterator extends PageIterator {
     }
 
     /** Pointer to native result iterator. */
-    private final int mNativeResultIterator;
+    private final long mNativeResultIterator;
 
-    /* package */ResultIterator(int nativeResultIterator) {
+    /* package */ResultIterator(long nativeResultIterator) {
         super(nativeResultIterator);
 
         mNativeResultIterator = nativeResultIterator;
-        Log.i("ResultIterator", "the nativeResultIterator is " + mNativeResultIterator);
-
     }
 
     /**
@@ -69,76 +61,6 @@ public class ResultIterator extends PageIterator {
         return nativeConfidence(mNativeResultIterator, level);
     }
 
-    /**
-     * Returns all possible matching text strings and their confidence level 
-     * for the current object at the given level.
-     * <p>
-     * The default matching text is blank (""). 
-     * The default confidence level is zero (0.0) 
-     *
-     * @param level the page iterator level. See {@link PageIteratorLevel}.
-     * @return A list of pairs with the UTF string and the confidence
-     */
-    public List<Pair <String, Double>> getChoicesAndConfidence(int level){
-    	
-    	// get the native choices
-    	String [] nativeChoices = nativeGetChoices(mNativeResultIterator, level, true);
-    	
-    	// create the output list
-    	ArrayList <Pair <String, Double>> pairedResults = new ArrayList <Pair <String, Double>> ();
-    	
-    	for(int i = 0; i < nativeChoices.length; i++ ){
-    		// The string and the confidence level are separated by a '|'
-    		int separatorPosition = nativeChoices[i].lastIndexOf('|');
-    		
-    		// Create a pair with the choices
-    		String utfString = "";
-    		Double confidenceLevel = Double.valueOf(0);
-    		if(separatorPosition > 0){
-    			
-    			// if the string contains a '|' separate the UTF string and the confidence level 
-        		utfString = nativeChoices[i].substring(0, separatorPosition);
-        		try{
-        			confidenceLevel = Double.parseDouble(nativeChoices[i].substring(separatorPosition + 1));
-        		} catch(NumberFormatException e) {
-        			Log.e("ResultIterator","Invalid confidence level for " + nativeChoices[i]);
-        		}
-    		} else {
-    			// if the string contains no '|' just save the full native result as the utfString
-    			utfString = nativeChoices[i];
-    		}
-    		
-    		// add the utf string to the results
-    		pairedResults.add(new Pair <String, Double> (utfString,confidenceLevel));
-    	}
-    	
-    	return pairedResults; 
-    }
-    
-    /**
-     * Returns all possible matching text strings for the current object at the given level.
-     * <p>
-     * The default matching text is blank ("").  
-     *
-     * @param level the page iterator level. See {@link PageIteratorLevel}.
-     * @return A list of strings (contains matches ordered from most likely to least likely)
-     */
-    public List<String> getChoices(int level){
-    	
-    	// get the native choices
-    	String [] nativeChoices = nativeGetChoices(mNativeResultIterator, level, false);
-    	
-    	// create the output list
-    	ArrayList <String> stringResults = new ArrayList <String> ();
-    	
-		// add the utf string to the results
-    	for(int i = 0; i < nativeChoices.length; i++ ){ stringResults.add(nativeChoices[i]); }
-    	
-    	return stringResults;
-    }
-    
-    private static native String [] nativeGetChoices (int nativeResultIterator, int level, boolean addConfidence); 
-
-    private static native String nativeGetUTF8Text(int nativeResultIterator, int level);
-    private static native float nativeConfidence(int nativeResultIterator, int level);
+    private static native String nativeGetUTF8Text(long nativeResultIterator, int level);
+    private static native float nativeConfidence(long nativeResultIterator, int level);
 }
