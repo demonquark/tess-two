@@ -1178,8 +1178,8 @@ void ColumnFinder::InsertRemainingNoise(TO_BLOCK* block) {
     }
     if (best_part != NULL &&
         best_distance < kMaxDistToPartSizeRatio * best_part->median_size()) {
-      // Close enough to merge.
-      if (debug) {
+    // Close enough to merge.
+    if (debug) {
         tprintf("Adding noise blob with distance %d, thr=%g:box:",
                 best_distance,
                 kMaxDistToPartSizeRatio * best_part->median_size());

@@ -103,6 +103,9 @@ public class TessBaseAPI {
     /** Use CJK fixed pitch model. */
     public static final String VAR_USE_CJK_FP_MODEL = "textord_use_cjk_fp_model";
 
+    /** Use CJK fixed pitch model. */
+    public static final String VAR_EDGES_MAX_CHILD_OUTLINE = "edges_max_children_per_outline";
+
     /** String value used to assign a boolean variable to true. */
     public static final String VAR_TRUE = "T";
 

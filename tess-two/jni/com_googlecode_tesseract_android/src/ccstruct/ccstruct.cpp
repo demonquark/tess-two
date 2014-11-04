@@ -35,6 +35,8 @@ const double CCStruct::kCJKXHeightFraction = 0.8;
 const double CCStruct::kCJKAscenderFraction = 0.1;
 const double CCStruct::kCJKXHeightCapRatio = CCStruct::kCJKXHeightFraction /
     (CCStruct::kCJKXHeightFraction + CCStruct::kCJKAscenderFraction);
+const double CCStruct::kCJKNoiseLimit = 0.12;
+const double CCStruct::kCJKSmallLimit = 0.5;
 
 CCStruct::CCStruct() {}
 
