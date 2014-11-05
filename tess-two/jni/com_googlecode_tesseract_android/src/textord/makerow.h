@@ -275,6 +275,29 @@ void assign_blobs_to_rows(                      //find lines
                           BOOL8 drawing_skew,   //draw smoothed skew
                           BOOL8 use_cjk_rows			//use cjk approximations of height, ascender and descender values
                          );
+
+float get_initial_max_y(BLOBNBOX *blob, BLOBNBOX_IT src_it, float line_size);
+float get_initial_min_y(BLOBNBOX *blob, BLOBNBOX_IT src_it, float line_size);
+void get_box_inside_box(TBOX *box, TBOX *inner_box, TO_ROW *row, TO_BLOCK *block, BOOL8 use_block_in_cjk_check, BOOL8 left_edge);
+void expand_box_using_horz_overlap(TBOX *box, TO_ROW *row, TO_BLOCK *block, BOOL8 use_block_in_cjk_check);
+void expand_box_using_inclusion(TBOX *box, TBOX *include_box);
+BOOL8 expand_box_using_direction(TBOX *core_box, TBOX *box, TO_ROW *row, TO_BLOCK *block, BOOL8 use_block_in_cjk_check, BOOL8 expand_left);
+BOOL8 shrink_box_using_direction(TBOX *core_box, TBOX *box, TO_ROW *row, TO_BLOCK *block, BOOL8 use_block_in_cjk_check, BOOL8 shrink_left);
+BOOL8 shrink_box_using_exclusion(TBOX *core_box, TBOX *box, TBOX *exclude_box, TO_ROW *row, TO_BLOCK *block, BOOL8 use_block_in_cjk_check);
+BOOL8 box_resembles_cjk_noise(TBOX *box, float linesize);
+BOOL8 box_resembles_cjk_ignorable(TBOX *box, float linesize);
+BOOL8 box_resembles_cjk_character(TBOX *box, float linesize);
+BOOL8 box_at_cjk_line_intercept(TBOX *box, TO_ROW *row);
+BOOL8 box_fits_cjk_row(TBOX *core_box, TO_ROW *dest_row, TO_BLOCK *block, BOOL8 use_block_in_cjk_check);
+BOOL8 box_major_y_overlap_in_row(TBOX *box, TO_ROW *row);
+
+void assign_noise_to_cjk_rows(
+                          TO_BLOCK *block,      //block to do
+                          float *gradient,      //block skew
+                          BOOL8 force_add_if_in_row,  // always add a blob if it is in the middle of the row
+                          BOOL8 use_block_in_cjk_check  // use blobs not yet in the row when checking CJK fit
+                          );
+
                                  //find best row
 OVERLAP_STATE most_overlapping_row(TO_ROW_IT *row_it,  //iterator
                                    TO_ROW *&best_row,  //output row

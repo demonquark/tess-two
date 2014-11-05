@@ -297,11 +297,14 @@ float Textord::filter_noise_blobs(
   BLOBNBOX_IT small_it = small_list;
   BLOBNBOX_IT large_it = large_list;
   STATS size_stats (0, MAX_NEAREST_DIST);
+  STATS line_size_stats (0, MAX_NEAREST_DIST);
+
   //blob heights
   float min_y;                   //size limits
   float max_y;
   float max_x;
   float max_height;              //of good blobs
+  float line_size;
 
   for (src_it.mark_cycle_pt(); !src_it.cycled_list(); src_it.forward()) {
     blob = src_it.data();
@@ -311,8 +314,18 @@ float Textord::filter_noise_blobs(
       * blob->bounding_box().width() * textord_noise_area_ratio)
       small_it.add_after_then_move(src_it.extract());
   }
+  // Calculate the line size.
   for (src_it.mark_cycle_pt(); !src_it.cycled_list(); src_it.forward()) {
-    size_stats.add(src_it.data()->bounding_box().height(), 1);
+  	size_stats.add(src_it.data()->bounding_box().height(), 1);
+
+  	// Use the height to calculate the line size. If this is CJK text, ignore blobs that are way out of proportion
+  	if(!use_cjk_fp_model_ || src_it.data()->bounding_box().width()/src_it.data()->bounding_box().height() < 5){
+    	line_size_stats.add(src_it.data()->bounding_box().height(), 1);
+    }
+  	// If this is CJK text, use the width (as well) to calculate the line size.
+    if (use_cjk_fp_model_ && src_it.data()->bounding_box().height()/src_it.data()->bounding_box().width() < 5){
+    	line_size_stats.add(src_it.data()->bounding_box().width(), 1);
+    }
   }
   initial_x = size_stats.ile(textord_initialx_ile);
   max_y = ceil(initial_x *
@@ -343,8 +356,9 @@ float Textord::filter_noise_blobs(
       size_stats.add (height, 1);
   }
   max_height = size_stats.ile (textord_initialasc_ile);
-  //      tprintf("max_y=%g, min_y=%g, initial_x=%g, max_height=%g,",
-  //              max_y,min_y,initial_x,max_height);
+  line_size = line_size_stats.ile(textord_initialx_ile);
+//  tprintf("Textord::filter_noise_blobs KRIS - max_y=%g, min_y=%g, initial_x=%g, line_size=%g, max_height=%g, max_x=%g.\n",
+//		  max_y, min_y, initial_x, line_size, max_height, max_x);
 
   // KRIS - use different max height for CJK models
   if(use_cjk_fp_model())
@@ -352,10 +366,10 @@ float Textord::filter_noise_blobs(
   else
 	  max_height *= tesseract::CCStruct::kXHeightCapRatio;
 
-	  if (max_height > initial_x)
-    initial_x = max_height;
-  //      tprintf(" ret=%g\n",initial_x);
-  return initial_x;
+	  if (max_height > line_size)
+		  line_size = max_height;
+  //      tprintf(" ret=%g\n",line_size);
+  return line_size;
 }
 
 // Fixes the block so it obeys all the rules:

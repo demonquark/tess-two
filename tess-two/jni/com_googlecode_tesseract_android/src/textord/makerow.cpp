@@ -271,10 +271,33 @@ void fit_lms_line(TO_ROW *row) {
   tesseract::DetLineFit lms;
   BLOBNBOX_IT blob_it = row->blob_list();
 
+  int first_x = MAX_INT32;
+  int first_y = 0;
+  TBOX box = TBOX(0,0,0,0);
+
   for (blob_it.mark_cycle_pt(); !blob_it.cycled_list(); blob_it.forward()) {
-    const TBOX& box = blob_it.data()->bounding_box();
-    lms.Add(ICOORD((box.left() + box.right()) / 2, box.bottom()));
+	  box.set_left(blob_it.data()->bounding_box().left());
+	  box.set_bottom(blob_it.data()->bounding_box().bottom());
+	  box.set_right(blob_it.data()->bounding_box().right());
+	  box.set_top(blob_it.data()->bounding_box().top());
+
+    if(box_at_cjk_line_intercept(&box,row)){
+    	// Save the first encounter
+    	if((box.left() + box.right()) / 2 < first_x){
+    		first_x = (box.left() + box.right()) / 2;
+    		first_y = box.bottom();
+    	}
+
+    	// Add the center bottom location to the list of coordinates used to calculate least mean squared (LMS)
+        lms.Add(ICOORD((box.left() + box.right()) / 2, box.bottom()));
+    }
   }
+
+  // If there is no starting character, add a dummy coordinate to the beginning of the row
+  if((row->max_y() - row->min_y()) / 2 < first_x){
+	  lms.Add(ICOORD((int) ((row->max_y() - row->min_y()) / 2), first_y));
+  }
+
   double error = lms.Fit(&m, &c);
   row->set_line(m, c, error);
 }
@@ -569,9 +592,20 @@ void cleanup_rows_making(                   //find lines
   //safe to use big ones now
   blob_it.set_to_list (&block->blobs);
                                  //throw all blobs in
-  blob_it.add_list_after (&block->noise_blobs);
   blob_it.add_list_after (&block->small_blobs);
-  assign_blobs_to_rows (block, &gradient, 3, FALSE, FALSE, FALSE, use_cjk_rows);
+  if(use_cjk_rows){
+	  // assign the small blobs
+	  assign_noise_to_cjk_rows(block, &gradient, true, true);
+
+	  // finally check the noise blobs
+	  blob_it.set_to_list (&block->blobs);
+	  blob_it.add_list_after (&block->noise_blobs);
+	  assign_noise_to_cjk_rows(block, &gradient, true, false);
+
+  } else {
+	  blob_it.add_list_after (&block->noise_blobs);
+	  assign_blobs_to_rows (block, &gradient, 3, FALSE, FALSE, FALSE, use_cjk_rows);
+  }
 }
 
 /**
@@ -1935,57 +1969,100 @@ void pre_associate_blobs(                  //make rough chars
   BLOBNBOX *blob;                //current blob
   BLOBNBOX *nextblob;            //next in list
   TBOX blob_box;
+  TBOX next_box;
   FCOORD blob_rotation;          //inverse of rotation
   BLOBNBOX_IT blob_it;           //iterator
   BLOBNBOX_IT start_it;          //iterator
   TO_ROW_IT row_it = block->get_rows ();
 
+  // KRIS - variables for outer edges of the row
+  bool noise_check = false;
+  bool overlap = false;
+  int mean_x;
+  TBOX fullrow;
+  TBOX noisefreerow;
+
 #ifndef GRAPHICS_DISABLED
   colour = ScrollView::RED;
 #endif
 
+  // Get blob specific items
   blob_rotation = FCOORD (rotation.x (), -rotation.y ());
-  for (row_it.mark_cycle_pt (); !row_it.cycled_list (); row_it.forward ()) {
-                                 //get blobs
-    blob_it.set_to_list (row_it.data ()->blob_list ());
-    for (blob_it.mark_cycle_pt (); !blob_it.cycled_list ();
-    blob_it.forward ()) {
-      blob = blob_it.data ();
-      blob_box = blob->bounding_box ();
-      start_it = blob_it;        //save start point
-      //                      if (testing_on && textord_show_final_blobs)
-      //                      {
-      //                              tprintf("Blob at (%d,%d)->(%d,%d), addr=%x, count=%d\n",
-      //                                      blob_box.left(),blob_box.bottom(),
-      //                                      blob_box.right(),blob_box.top(),
-      //                                      (void*)blob,blob_it.length());
-      //                      }
-      bool overlap;
-      do {
-        overlap = false;
-        if (!blob_it.at_last ()) {
-          nextblob = blob_it.data_relative(1);
-          overlap = blob_box.major_x_overlap(nextblob->bounding_box());
-          if (overlap) {
-            blob->merge(nextblob); // merge new blob
-            blob_box = blob->bounding_box(); // get bigger box
-            blob_it.forward();
-          }
-        }
-      }
-      while (overlap);
 
-      if(use_cjk_rows){
-      blob->chop (&start_it, &blob_it,
-        blob_rotation,
-        block->line_size * tesseract::CCStruct::kCJKXHeightFraction * textord_chop_width);
-      } else {
-      blob->chop (&start_it, &blob_it,
-        blob_rotation,
-        block->line_size * tesseract::CCStruct::kXHeightFraction * textord_chop_width);
-      }
+  // Loop through the rows
+  for (row_it.mark_cycle_pt (); !row_it.cycled_list (); row_it.forward ()) {
+
+	  // get the box size for the full row
+	  fullrow = TBOX(-MAX_INT16, -MAX_INT16, MAX_INT16, MAX_INT16);
+	  noisefreerow = TBOX(-MAX_INT16, -MAX_INT16, MAX_INT16, MAX_INT16);
+	  blob_it.set_to_list (row_it.data ()->blob_list ());
+	  for (blob_it.mark_cycle_pt (); !blob_it.cycled_list (); blob_it.forward ()) {
+		  blob_box = blob_it.data()->bounding_box();
+		  expand_box_using_inclusion(&fullrow, &blob_box);
+		  if(!box_resembles_cjk_noise(&blob_box, block->line_size)){
+			  expand_box_using_inclusion(&noisefreerow, &blob_box);
+		  }
+	  }
+
+	  // merge overlapping blobs
+	  for (blob_it.mark_cycle_pt (); !blob_it.cycled_list (); blob_it.forward ()) {
+		  // get the blob box
+		  blob = blob_it.data ();
+		  blob_box = blob->bounding_box ();
+
+		  // save start point
+		  start_it = blob_it;
+		  // if (testing_on && textord_show_final_blobs) {
+		  //	tprintf("Blob at (%d,%d)->(%d,%d), addr=%x, count=%d\n", blob_box.left(), blob_box.bottom(),
+		  //    		blob_box.right(), blob_box.top(), (void*)blob, blob_it.length());
+		  // }
+
+		  // merge all overlapping blobs
+		  do {
+			  overlap = false;
+			  if (!blob_it.at_last ()) {
+				  // move forward one blob
+				  nextblob = blob_it.data_relative(1);
+				  next_box = nextblob->bounding_box();
+				  overlap = blob_box.major_x_overlap(next_box);
+				  noise_check = false;
+				  mean_x = 0;
+
+				  // If one AND only if one of the boxes is noise
+				  if(use_cjk_rows && overlap && box_resembles_cjk_noise(&next_box, block->line_size)
+						  != box_resembles_cjk_noise(&blob_box, block->line_size)){
+
+					  // Get the center of the noise blob
+					  if(box_resembles_cjk_noise(&blob_box, block->line_size)) {
+						  mean_x = (blob_box.left() + blob_box.right()) / 2;
+					  } else {
+						  mean_x = (next_box.left() + next_box.right()) / 2;
+					  }
+
+					  // Ignore noise blobs that are too close to the edge
+					  if(mean_x - fullrow.left() > 0
+							  && mean_x - fullrow.left() < block->line_size * tesseract::CCStruct::kCJKNoiseLimit) {
+						  overlap = overlap && !(mean_x - fullrow.left() < noisefreerow.left() - mean_x);
+					  } else if (fullrow.right() - mean_x > 0
+							  && fullrow.right() - mean_x < block->line_size * tesseract::CCStruct::kCJKNoiseLimit){
+						  overlap = overlap && !(fullrow.right() - mean_x < mean_x - noisefreerow.right());
+					  }
+				  }
+				  if (overlap) {
+					  blob->merge(nextblob); // merge new blob
+					  blob_box = blob->bounding_box(); // get bigger box
+					  blob_it.forward();
+				  }
+			  }
+		  } while (overlap);
+
+	  if(!use_cjk_rows){
+		  blob->chop (&start_it, &blob_it, blob_rotation,
+			block->line_size * tesseract::CCStruct::kXHeightFraction * textord_chop_width);
+	  }
       //attempt chop
     }
+
 #ifndef GRAPHICS_DISABLED
     if (testing_on && textord_show_final_blobs) {
       if (to_win == NULL)
@@ -2006,6 +2083,152 @@ void pre_associate_blobs(                  //make rough chars
         colour = ScrollView::RED;
     }
 #endif
+  }
+
+  if(use_cjk_rows){
+
+	int lookforward = 1;
+	int lookfurtherforward = 1;
+	int diff = 0;
+	int last_x = 0;
+	bool valid_prefix = false;
+	float ratiodiff1 = 1;
+	float ratiodiff2 = 1;
+	float ratio1 = 1;
+	float ratio2 = 1;
+	float space = 0;
+	TBOX test_box;
+
+	// Try to associate prefixes and post fixes.
+	for (row_it.mark_cycle_pt(); !row_it.cycled_list(); row_it.forward()) {
+
+		// Reset variables
+		space = 0;
+		diff = 0;
+		last_x = -MAX_INT16;
+
+		// Calculate the average distance between blobs.
+		blob_it.set_to_list (row_it.data ()->blob_list ());
+		blob_it.move_to_first ();
+		for (blob_it.mark_cycle_pt (); !blob_it.cycled_list (); blob_it.forward ()) {
+			// Ignore joined blobs (we will look at compound blob it is part of)
+			if(!blob_it.data()->joined_to_prev()){
+				if(last_x > -MAX_INT16 && last_x < blob_it.data()->bounding_box().left()){
+					space += (float)(blob_it.data()->bounding_box().left() - last_x);
+					diff++;
+				}
+				last_x = blob_it.data()->bounding_box().right();
+			}
+		}
+		if(diff > 0){ space = (3 * space) / (5 * diff); }
+
+		// Loop through the blobs in the row
+		blob_it.move_to_first ();
+		for (blob_it.mark_cycle_pt (); !blob_it.cycled_list (); blob_it.forward ()) {
+
+			// Reset variables
+			lookforward = 1;
+			lookfurtherforward = 1;
+			diff = 0;
+			valid_prefix = false;
+
+			// Ignore joined blobs (we will look at compound blob it is part of)
+			if(!blob_it.data()->joined_to_prev()){
+
+				// 1) Take the current blob
+				blob_box = blob_it.data()->bounding_box();
+
+				// 2) Find the next blob
+				while(blob_it.data_relative(lookforward)->joined_to_prev()){ lookforward++; }
+				next_box = blob_it.data_relative(lookforward)->bounding_box();
+
+				diff = next_box.left() - blob_box.right();
+
+				// 3) Check if the current blob is close enough to the next blob to be a prefix
+				if((blob_box.width() * 2 < next_box.width() * 3) &&
+					((blob_box.left() < next_box.left() && blob_box.x_overlap(next_box)) ||
+					(diff < block->line_size * tesseract::CCStruct::kCJKNoiseLimit && diff >= 0 && diff <= space))){
+
+					// 4a) Check if the next blob is large enough to be the main part of a character
+					test_box = blob_it.data_relative(lookforward)->cblob()->bounding_box();
+					valid_prefix = !box_resembles_cjk_ignorable(&test_box, block->line_size);
+
+					// 4b) If the next blob is compound box, check the parts
+					while(!valid_prefix && blob_it.data_relative(lookforward + lookfurtherforward)->joined_to_prev()){
+						test_box = blob_it.data_relative(lookforward + lookfurtherforward)->bounding_box();
+						valid_prefix = valid_prefix || !box_resembles_cjk_ignorable(&test_box, block->line_size);
+						lookfurtherforward++;
+					}
+
+					// 5) Check if a merger of the current and next box looks more like a character
+					if(valid_prefix){
+						test_box.set_top(blob_box.top() > next_box.top() ? blob_box.top() : next_box.top());
+						test_box.set_bottom(blob_box.bottom() < next_box.bottom() ? blob_box.bottom() : next_box.bottom());
+						test_box.set_left(blob_box.left() < next_box.left() ? blob_box.left() : next_box.left());
+						test_box.set_right(blob_box.right() > next_box.right() ? blob_box.right() : next_box.right());
+						ratio1 = (float) next_box.width() / (float) next_box.height();
+						ratio2 = (float) test_box.width() / (float) test_box.height();
+						if(ratio1 < 1){ ratio1 = 1/ratio1; }
+						if(ratio2 < 1){ ratio2 = 1/ratio2; }
+
+						valid_prefix = ratio2 < (ratio1 * 1.1)
+								&& box_resembles_cjk_character(&test_box, block->line_size);
+					}
+
+					// Ugly hack to merge previous:
+					blob_it.data()->merge(blob_it.data_relative(lookforward));
+					blob_it.data_relative(lookforward)->set_bounding_box (blob_it.data_relative(lookforward)->cblob()->bounding_box());
+
+				}
+			}
+		}
+	}
+
+	// Remove too small blobs and discard empty rows.
+  	BLOBNBOX_IT removed_blobs = &block->blobs;
+  	bool removed_head = false;
+  	bool should_remove = false;
+  	row_it.move_to_first();
+	for (row_it.mark_cycle_pt(); !row_it.cycled_list(); row_it.forward()) {
+
+		// Reset the variables at the beginning of each row
+	  	removed_head = false;
+	  	should_remove = false;
+
+		// Loop through the blobs in the row
+		blob_it.set_to_list (row_it.data ()->blob_list ());
+		blob_it.move_to_first ();
+		for (blob_it.mark_cycle_pt (); !blob_it.cycled_list (); blob_it.forward ()) {
+			blob_box = blob_it.data()->bounding_box();
+
+			// 1) check if the box is part of an ignored set of blobs
+			should_remove = (removed_head && blob_it.data()->joined_to_prev());
+
+			// 2) check if the box can be ignored
+			if(!should_remove && !blob_it.data()->joined_to_prev()){
+				// 2a) check if the box itself can be ignored
+				should_remove = box_resembles_cjk_ignorable(&blob_box, block->line_size);
+
+				// 2b) Make sure that all connected blobs can also be ignored
+				lookforward = 1;
+				while(should_remove && blob_it.data_relative(lookforward)->joined_to_prev()){
+					should_remove = should_remove && box_resembles_cjk_ignorable(&blob_box, block->line_size);
+					lookforward++;
+				}
+			}
+
+			// 3) do the actual removal of unwanted boxes
+			if(should_remove){
+				removed_blobs.add_after_then_move(blob_it.extract());
+				removed_head = true;
+			} else {
+				removed_head = false;
+			}
+
+		}
+		if (row_it.data()->blob_list()->empty())
+			delete row_it.extract();
+	}
   }
 }
 
@@ -2063,14 +2286,38 @@ void fit_parallel_lms(float gradient, TO_ROW *row) {
    tesseract::DetLineFit lms;
   BLOBNBOX_IT blob_it = row->blob_list();
 
+  int first_x = MAX_INT32;
+  int first_y = 0;
+  TBOX box = TBOX(0,0,0,0);
+
   blobcount = 0;
   for (blob_it.mark_cycle_pt(); !blob_it.cycled_list(); blob_it.forward()) {
     if (!blob_it.data()->joined_to_prev()) {
       const TBOX& box = blob_it.data()->bounding_box();
-      lms.Add(ICOORD((box.left() + box.right()) / 2, box.bottom()));
+  	  box.set_left(blob_it.data()->bounding_box().left());
+  	  box.set_bottom(blob_it.data()->bounding_box().bottom());
+  	  box.set_right(blob_it.data()->bounding_box().right());
+  	  box.set_top(blob_it.data()->bounding_box().top());
+
+  	  if(box_at_cjk_line_intercept(&box,row)){
+    	  // Save the first encounter
+    	  if((box.left() + box.right()) / 2 < first_x){
+    		  first_x = (box.left() + box.right()) / 2;
+    		  first_y = box.bottom();
+    	  }
+  	  // Add the center bottom location to the list of coordinates used to calculate least mean squared (LMS)
+  	  lms.Add(ICOORD((box.left() + box.right()) / 2, box.bottom()));
       blobcount++;
+      }
     }
   }
+
+  // If there is no starting character, add a dummy coordinate to the beginning of the row
+  if((row->max_y() - row->min_y()) / 2 < first_x){
+	  lms.Add(ICOORD((int) ((row->max_y() - row->min_y()) / 2), first_y));
+      blobcount++;
+  }
+
   double error = lms.ConstrainedFit(gradient, &c);
   row->set_parallel_line(gradient, c, error);
   if (textord_straight_baselines && blobcount > textord_lms_line_trials) {
@@ -2356,6 +2603,1090 @@ inT32 xstarts[]                  //coords of segments
   return coeffs;
 }
 
+/**
+ * @name get_initial_min_y
+ *
+ * Uses blobs to calculate the likely bottom (min_y) for the CJK row containing the test blob.
+ * The provided blob list should only contain normal blobs (no small, large or noise blobs)
+ * We assume that the line size is close to the size of CJK square char.
+ * We assume that the row cannot have a height larger than 2 * line_size
+ * The min_y is then the lowest blob bottom within line_size distance from the center of the test blob.
+ *
+ * Example:
+ * The test blob is (5,60) ->(35,70) and line size = 35.
+ * The iterator contains the blobs:
+ * - (5,60)	 ->(35,70)	: bottom=60
+ * - (30,0)  ->(65,35)	: bottom=0
+ * - (40,40) ->(80,85)	: bottom=40
+ * - (85,36) ->(120,80)	: bottom=36
+ * - (122,60)->(160,98)	: bottom=60
+ * Then:
+ * center height of test blob = (60+70)/2 = 65
+ * maximum lower range of row = 65 - 35 = 30
+ * min_y = lowest bottom within the range = 36
+ * Note: box coordinates given as (bottom left x, bottom left y)->(top right x, top right y)
+ */
+float get_initial_min_y(BLOBNBOX *blob, BLOBNBOX_IT src_it, float line_size){
+
+	// Calculate the lower range
+	float lower_range = ((float) (blob->bounding_box().top() + blob->bounding_box().bottom())) / 2 - line_size;
+
+	// initial_min_y
+	float initial_min_y = (float) blob->bounding_box().bottom();
+
+	// Loop through the blobs to find the lowest bottom within the range
+	src_it.move_to_first ();
+	for (src_it.mark_cycle_pt(); !src_it.cycled_list(); src_it.forward()) {
+		if(src_it.data()->bounding_box().bottom() > lower_range
+				&& src_it.data()->bounding_box().bottom() < initial_min_y){
+			initial_min_y = (float) src_it.data()->bounding_box().bottom();
+		}
+	}
+
+//	tprintf("get_initial_min_y KRIS - test blob bottom %d | line_size %g | lower_range %g | initial_min_y %g \n",
+//			blob->bounding_box().bottom(), line_size, lower_range, initial_min_y);
+
+	return initial_min_y;
+}
+
+/**
+ * @name get_initial_max_y
+ *
+ * Uses blobs to calculate the likely top (max_y) for the CJK row containing the test blob.
+ * The provided blob list should only contain normal blobs (no small, large or noise blobs)
+ * We assume that the line size is close to the size of CJK square char.
+ * We assume that the row cannot have a height larger than 2 * line_size
+ * The max_y is then the highest blob top within line_size distance from the center of the test blob.
+ *
+ * Example:
+ * The test blob is (5,60) ->(35,70) and line size = 35.
+ * The iterator contains the blobs:
+ * - (5,60)	 ->(35,70)	: top=70
+ * - (30,0)  ->(65,35)	: top=35
+ * - (40,40) ->(80,85)	: top=85
+ * - (85,36) ->(120,80)	: top=80
+ * - (122,65)->(160,105): top=105
+ * Then:
+ * center height of test blob = (60+70)/2 = 65
+ * maximum upper range of row = 65 + 35 = 100
+ * max_y = highest top within the range = 85
+ * Note: box coordinates given as (bottom left x, bottom left y)->(top right x, top right y)
+ */
+float get_initial_max_y(BLOBNBOX *blob, BLOBNBOX_IT src_it, float line_size){
+
+	// Calculate the lower range
+	float upper_range = ((float) (blob->bounding_box().top() + blob->bounding_box().bottom())) / 2 - line_size;
+
+	// initial_min_y
+	float initial_max_y = (float) blob->bounding_box().top();
+
+	// Loop through the blobs to find the lowest bottom within the range
+	src_it.move_to_first ();
+	for (src_it.mark_cycle_pt(); !src_it.cycled_list(); src_it.forward()) {
+		if(src_it.data()->bounding_box().bottom() < upper_range
+				&& src_it.data()->bounding_box().bottom() > initial_max_y){
+			initial_max_y = (float) src_it.data()->bounding_box().bottom();
+		}
+	}
+
+//	tprintf("get_initial_max_y KRIS - test blob bottom %d | line_size %g | upper_range %g | initial_max_y %g \n",
+//			blob->bounding_box().bottom(), line_size, upper_range, initial_max_y);
+
+	return initial_max_y;
+}
+
+/**
+ * @name get_box_inside_box
+ *
+ * Get the largest box inside the box that is closest to either the left or right edge.
+ * The inner box is assigned to inner_box
+ * Example:
+ * The TBOX is (12,65)->(70,100).
+ * The TO_ROW contains the blobs:
+ * - (12,70) ->(41,85)
+ * - (100,80)->(120,98)
+ * - (42,80) ->(69,99)
+ * - (60,75) ->(69,88)
+ * - (45,65) ->(65,85)
+ * - (0,10)  ->(30,132)
+ * - (70,90) ->(90,102)
+ * Then inner_box will be assigned to (42,80) ->(69,99)
+ * Note: box coordinates given as (bottom left x, bottom left y)->(top right x, top right y)
+ */
+void get_box_inside_box(TBOX *box, TBOX *inner_box, TO_ROW *row,
+		TO_BLOCK *block, BOOL8 use_block_in_cjk_check, BOOL8 left_edge){
+
+	BLOBNBOX_IT blob_it = row->blob_list();
+	blob_it.move_to_first ();
+	inner_box->set_to_given_coords(box->left(), box->bottom(), box->right(), box->top());
+	TBOX temp_box = TBOX(0,0,0,0);
+	int nearest_x = MAX_INT16;
+	BOOL8 checking_block = false;
+//	tprintf("get_box_inside_box KRIS - box (%d,%d) (%d,%d) | temp_box (%d,%d) (%d,%d) | %s .\n",
+//			box->left(), box->bottom(), box->right(), box->top(),
+//			temp_box.left(), temp_box.bottom(), temp_box.right(), temp_box.top(),
+//			left_edge ? "left_edge" : "right_edge");
+	do {
+
+		// Check either the row or the block
+		blob_it = checking_block ? &block->blobs : row->blob_list();
+
+		// Loop through all the blobs to find the blob that is nearest edge of the box
+		for (blob_it.mark_cycle_pt(); !blob_it.cycled_list(); blob_it.forward()) {
+			// Add to the new box if the blob is in the old box and not touching the direction edge
+			temp_box.set_to_given_coords(blob_it.data()->bounding_box().left(),
+					blob_it.data()->bounding_box().bottom(),
+					blob_it.data()->bounding_box().right(),
+					blob_it.data()->bounding_box().top());
+
+			if(box->contains(blob_it.data()->bounding_box())
+					&& (!checking_block || box_major_y_overlap_in_row(&temp_box, row))){
+
+//				tprintf("get_box_inside_box KRIS - trying %s fit (%d,%d) (%d,%d) | %s | nearest_x=%d | new=%d.\n",
+//						checking_block ? "block" : "row",
+//								temp_box.left(),
+//								temp_box.bottom(),
+//								temp_box.right(),
+//								temp_box.top(),
+//						left_edge ? "left_edge" : "right_edge",
+//						nearest_x, box->left() - temp_box.left());
+
+				if((left_edge && (( blob_it.data()->bounding_box().left() - box->left() < nearest_x)
+						|| (blob_it.data()->bounding_box().left() - box->left() == nearest_x &&
+							inner_box->right() > blob_it.data()->bounding_box().right())))
+					||(!left_edge && ((box->right() - blob_it.data()->bounding_box().right() < nearest_x)
+							|| (box->right() - blob_it.data()->bounding_box().right() == nearest_x &&
+								inner_box->left() < blob_it.data()->bounding_box().left())))
+				){
+					inner_box->set_to_given_coords(
+							blob_it.data()->bounding_box().left(),
+							blob_it.data()->bounding_box().bottom(),
+							blob_it.data()->bounding_box().right(),
+							blob_it.data()->bounding_box().top());
+					nearest_x = (left_edge) ? inner_box->left() - box->left() : box->right() - inner_box->right();
+				}
+			} else {
+//				tprintf("get_box_inside_box KRIS - trying %s failed (%d,%d) (%d,%d) | %s .\n",
+//						checking_block ? "block" : "row",
+//						blob_it.data()->bounding_box().left(),
+//						blob_it.data()->bounding_box().bottom(),
+//						blob_it.data()->bounding_box().right(),
+//						blob_it.data()->bounding_box().top(),
+//						left_edge ? "left_edge" : "right_edge");
+			}
+		}
+
+		// Toggle checking the block
+		if(use_block_in_cjk_check){
+			checking_block = !checking_block;
+		}
+
+	} while(checking_block && use_block_in_cjk_check);
+
+//	tprintf("get_box_inside_box KRIS - used (%d,%d) (%d,%d) to get (%d,%d) (%d,%d) %s.\n",
+//			box->left(), box->bottom(),
+//			box->right(), box->top(),
+//			inner_box->left(), inner_box->bottom(),
+//			inner_box->right(), inner_box->top(),
+//			left_edge ? "left_edge" : "right_edge");
+
+}
+
+/**
+ * @name expand_box_using_horz_overlap
+ *
+ * Expand the TBOX to include all the blobs with overlapping x coordinates.
+ * Example:
+ * The TBOX is (40,90)->(70,102).
+ * The TO_ROW contains the blobs:
+ * - (12,70) ->(41,85)
+ * - (100,80)->(120,98)
+ * - (42,80) ->(69,99)
+ * - (45,65) ->(65,85)
+ * - (0,10)  ->(30,132)
+ * - (70,90) ->(90,102)
+ * Then the TBOX will be expanded to (12,65)->(70,120)
+ * Note: box coordinates given as (bottom left x, bottom left y)->(top right x, top right y)
+ */
+void expand_box_using_horz_overlap(TBOX *box, TO_ROW *row, TO_BLOCK *block, BOOL8 use_block_in_cjk_check){
+
+	BLOBNBOX_IT blob_it = row->blob_list();
+	blob_it.move_to_first ();
+	bool looped_all = false;
+	TBOX blob_box;
+	BOOL8 checking_block = false;
+//	tprintf("expand_box_using_horz_overlap KRIS - start expanding (%s) (%d,%d) (%d,%d)\n",
+//			use_block_in_cjk_check ? "use block" : "only use row",
+//			box->left(), box->bottom(),
+//			box->right(), box->top());
+
+	do {
+
+		// Check either the row or the block
+		blob_it = checking_block ? &block->blobs : row->blob_list();
+		looped_all = false;
+		blob_it.move_to_first ();
+
+//		tprintf("expand_box_using_horz_overlap KRIS - start %s %s %s \n",
+//				checking_block ? "block" : "row",
+//				looped_all ? "looped_all" : "!looped_all",
+//				blob_it.empty() ? "blob_it.empty()" : "!blob_it.empty()");
+
+		// Loop through all the blobs
+		while (!blob_it.empty() && !looped_all){
+
+			// Get the bounding box of this blob
+			blob_box = blob_it.data()->bounding_box();
+
+			if (!checking_block || box_major_y_overlap_in_row(&blob_box, row)){
+
+//				tprintf("expand_box_using_horz_overlap KRIS - try %s (%d,%d) (%d,%d) ",
+//						checking_block ? "block" : "row",
+//						blob_box.left(), blob_box.bottom(),
+//						blob_box.right(), blob_box.top());
+
+				// expand to the top and the bottom
+				if(blob_box.left() >= box->left() && blob_box.right() <= box->right()){
+					if(blob_box.top() > box->top()){ box->set_top (blob_box.top()); }
+					if(blob_box.bottom() < box->bottom()){ box->set_bottom (blob_box.bottom()); }
+//					tprintf("_ EXPANDED VERTICAL (%d,%d) (%d,%d) ",
+//							box->left(), box->bottom(),
+//							box->right(), box->top());
+				}
+
+				// expand to either the left or the right
+				if((blob_box.left() < box->left() && blob_box.right() > box->left())
+						|| (blob_box.left() < box->right() && blob_box.right() > box->right())){
+					if(blob_box.top() > box->top()){ 	box->set_top (blob_box.top()); }
+					if(blob_box.bottom() < box->bottom()){ 	box->set_bottom (blob_box.bottom()); }
+					if(blob_box.left() < box->left()){ 	box->set_left (blob_box.left()); }
+					if(blob_box.right() > box->right()){ box->set_right (blob_box.right()); }
+					blob_it.move_to_first();
+//					tprintf("_ EXPANDED HORIZONTAL (%d,%d) (%d,%d) ",
+//							box->left(), box->bottom(),
+//							box->right(), box->top());
+				}
+
+//				tprintf("_ \n");
+			} else {
+//				tprintf("expand_box_using_horz_overlap KRIS - try %s (%d,%d) (%d,%d) _ failed. \n",
+//						checking_block ? "block" : "row",
+//						blob_box.left(), blob_box.bottom(),
+//						blob_box.right(), blob_box.top());
+
+			}
+
+			// move to the next blob
+			looped_all = blob_it.at_last ();
+			blob_it.forward ();
+		}
+
+		// Toggle checking the block
+		if(use_block_in_cjk_check){
+			checking_block = !checking_block;
+		}
+
+	} while(checking_block && use_block_in_cjk_check);
+
+
+//	tprintf("expand_box_using_horz_overlap KRIS - end expanding (%s) (%d,%d) (%d,%d)\n",
+//			use_block_in_cjk_check ? "use block" : "only use row",
+//			box->left(), box->bottom(),
+//			box->right(), box->top());
+
+}
+
+/**
+ * @name expand_box_using_direction
+ *
+ * Expand the TBOX to include the box to its immediate left AND the core_box.
+ * Example:
+ * The core_box is (40,90)->(70,102).
+ * The box is (42,65)->(69,99).
+ * The TO_ROW contains the blobs:
+ * - (12,70) ->(41,85)
+ * - (100,80)->(120,98)
+ * - (42,80) ->(69,99)
+ * - (45,65) ->(65,85)
+ * - (0,10)  ->(30,132)
+ * - (70,90) ->(90,102)
+ * Then the box adds the core_box and (12,70)->(41,85) and expands to (12,65)->(70,102)
+ * Note: box coordinates given as (bottom left x, bottom left y)->(top right x, top right y)
+ */
+BOOL8 expand_box_using_direction(TBOX *core_box, TBOX *box, TO_ROW *row,
+		TO_BLOCK *block, BOOL8 use_block_in_cjk_check, BOOL8 expand_left){
+
+	// Expand the box to include the core box
+	TBOX new_box = TBOX(0,0,0,0);
+	new_box.set_left(box->left() < core_box->left() ? box->left() : core_box->left());
+	new_box.set_bottom(box->bottom() < core_box->bottom() ? box->bottom() : core_box->bottom());
+	new_box.set_right(box->right() > core_box->right() ? box->right() : core_box->right());
+	new_box.set_top(box->top() > core_box->top() ? box->top() : core_box->top());
+
+	// Go through the blobs in the row
+	BLOBNBOX_IT blob_it = row->blob_list();
+	blob_it.move_to_first ();
+	int nearest_x = expand_left ? -MAX_INT16 : MAX_INT16;
+	bool expanded = false;
+	bool checking_block = false;
+	TBOX blob_box = TBOX(box->left(), box->bottom(), box->right(), box->top());
+	TBOX temp_box = TBOX(0,0,0,0);
+
+
+	do{
+		// Check either the row or the block
+		blob_it = checking_block ? &block->blobs : row->blob_list();
+
+		// Loop through all the blobs to find the blob that is nearest left of the expanded box
+		for (blob_it.mark_cycle_pt(); !blob_it.cycled_list(); blob_it.forward()) {
+			// Get the box to the expanded box's immediate left
+			temp_box.set_left(blob_it.data()->bounding_box().left());
+			temp_box.set_bottom(blob_it.data()->bounding_box().bottom());
+			temp_box.set_right(blob_it.data()->bounding_box().right());
+			temp_box.set_top(blob_it.data()->bounding_box().top());
+
+			if(((expand_left && blob_it.data()->bounding_box().left() < new_box.left()
+					&& blob_it.data()->bounding_box().left() > nearest_x) ||
+					(!expand_left && blob_it.data()->bounding_box().right() > new_box.right()
+									&& blob_it.data()->bounding_box().right() < nearest_x))
+					&& (!checking_block || box_major_y_overlap_in_row(&temp_box, row))){
+				blob_box.set_to_given_coords(
+						blob_it.data()->bounding_box().left(),
+						blob_it.data()->bounding_box().bottom(),
+						blob_it.data()->bounding_box().right(),
+						blob_it.data()->bounding_box().top());
+
+				if(expand_left){
+					nearest_x = blob_box.left();
+				} else {
+					nearest_x = blob_box.right();
+				}
+
+//				tprintf("expand_box_%s KRIS - %s look ADDED (%d,%d) (%d, %d) | (%d,%d) (%d, %d) | nearest_x = %d\n",
+//						expand_left ? "left" : "right",
+//						checking_block ? "block" : "row",
+//						blob_it.data()->bounding_box().left(),
+//						blob_it.data()->bounding_box().bottom(),
+//						blob_it.data()->bounding_box().right(),
+//						blob_it.data()->bounding_box().top(),
+//						new_box.left(),
+//						new_box.bottom(),
+//						new_box.right(),
+//						new_box.top(),
+//						nearest_x);
+
+			} else {
+//				tprintf("expand_box_%s KRIS - %s look SKIPPED (%d,%d) (%d, %d) | nearest_x = %d\n",
+//						expand_left ? "left" : "right",
+//						checking_block ? "block" : "row",
+//						blob_it.data()->bounding_box().left(),
+//						blob_it.data()->bounding_box().bottom(),
+//						blob_it.data()->bounding_box().right(),
+//						blob_it.data()->bounding_box().top(),
+//						nearest_x);
+			}
+		}
+		// Toggle checking the block
+		if(use_block_in_cjk_check){
+			checking_block = !checking_block;
+		}
+
+	} while(checking_block && use_block_in_cjk_check);
+
+
+	// If we found a blob to the left of the expanded box
+	if(nearest_x > -MAX_INT16 && nearest_x < MAX_INT16 ){
+
+		// calculate what the final expanded box will look like
+		expand_box_using_inclusion(&new_box, &blob_box);
+		float ratio = (float) new_box.width() / (float) new_box.height();
+
+		expanded = true;
+//		tprintf("expand_box_%s KRIS - (%d,%d) (%d,%d) using (%d,%d) (%d,%d) to (%d,%d) (%d,%d) | ratio=%g return %s.\n",
+//				expand_left ? "left" : "right",
+//				box->left(), box->bottom(),
+//				box->right(), box->top(),
+//				blob_box.left(), blob_box.bottom(),
+//				blob_box.right(), blob_box.top(),
+//				new_box.left(), new_box.bottom(),
+//				new_box.right(), new_box.top(),
+//				ratio, expanded ? "true" : "false");
+
+		box->set_to_given_coords(new_box.left(),new_box.bottom(), new_box.right(),new_box.top());
+
+	} else {
+//		tprintf("expand_box_%s KRIS - (%d,%d) (%d,%d) no expansion return %s.\n",
+//				expand_left ? "left" : "right",
+//				box->left(), box->bottom(),
+//				box->right(), box->top(),
+//				expanded ? "true" : "false");
+	}
+
+	return expanded;
+}
+
+/**
+ * @name expand_box_using_inclusion
+ * Expands the box by adding the inclusion box.
+ * Example:
+ * The box is (40,90)->(70,102).
+ * The include_box is (35,65)->(60,70).
+ * Then the TBOX expands to (35,65)->(70,102)
+ * Note: box coordinates given as (bottom left x, bottom left y)->(top right x, top right y)
+ *
+ */
+void expand_box_using_inclusion(TBOX *box, TBOX *include_box){
+	if(include_box->top() > box->top() || box->top() == MAX_INT16){
+		box->set_top (include_box->top()); }
+	if(include_box->bottom() < box->bottom()|| box->bottom() == -MAX_INT16){
+		box->set_bottom (include_box->bottom()); }
+	if(include_box->left() < box->left()|| box->left() == -MAX_INT16){
+		box->set_left (include_box->left()); }
+	if(include_box->right() > box->right()|| box->right() == MAX_INT16){
+		box->set_right (include_box->right()); }
+}
+
+/**
+ * @name shrink_box_using_direction
+ * Shrinks the box by stripping away boxes at either the left or right edge.
+ *
+ * The description below describes the process used when stripping from the right edge (i.e. shrink_left is false)
+ * If shrink_left is true, replace "right edge" with "left edge" in the description.
+ *
+ * Rebuilds the box using the core box and all the boxes from the TO_ROW contained by the original box
+ * with the exception of any boxes that touch the right side of the original box.
+ *
+ * Returns true if the resulting box has the same right edge as the core box (meaning we can no longer shrink)
+ *
+ * Example:
+ * The core_box is (40,90)->(70,102).
+ * The box is (35,65)->(70,102).
+ * The TO_ROW contains the blobs:
+ * - (12,70) ->(41,85)
+ * - (100,80)->(120,98)
+ * - (42,80) ->(69,99)
+ * - (45,65) ->(65,85)
+ * - (0,10)  ->(30,132)
+ * - (70,90) ->(90,102)
+ * - (75,30) ->(85,40)
+ * - (35,90) ->(70,100)
+ * - (50,50) ->(60,60)
+ * Then the TBOX ignores (35,90)->(70,100) and shrink to (40,65)->(70,102)
+ * Note: box coordinates given as (bottom left x, bottom left y)->(top right x, top right y)
+ *
+ */
+BOOL8 shrink_box_using_direction(TBOX *core_box, TBOX *box, TO_ROW *row,
+		TO_BLOCK *block, BOOL8 use_block_in_cjk_check, BOOL8 shrink_left){
+
+	// Rebuild the box from the core box
+	TBOX new_box = TBOX(core_box->left(), core_box->bottom(), core_box->right(), core_box->top());
+
+	// Go through the blobs in the row
+	BLOBNBOX_IT blob_it = row->blob_list();
+	blob_it.move_to_first ();
+	for (blob_it.mark_cycle_pt(); !blob_it.cycled_list(); blob_it.forward()) {
+		// Add to the new box if the blob is in the old box and not touching the direction edge
+		if(box->contains(blob_it.data()->bounding_box())){
+			if((shrink_left && box->left() < blob_it.data()->bounding_box().left())				// shrink from left edge
+					|| (!shrink_left && box->right() > blob_it.data()->bounding_box().right())){  // shrink from right edge
+				if(blob_it.data()->bounding_box().top() > new_box.top()){
+					new_box.set_top (blob_it.data()->bounding_box().top());
+				}
+				if(blob_it.data()->bounding_box().bottom() < new_box.bottom()){
+					new_box.set_bottom (blob_it.data()->bounding_box().bottom());
+				}
+				if(blob_it.data()->bounding_box().left() < new_box.left()){
+					new_box.set_left (blob_it.data()->bounding_box().left());
+				}
+				if(blob_it.data()->bounding_box().right() > new_box.right()){
+					new_box.set_right (blob_it.data()->bounding_box().right());
+				}
+			}
+		}
+	}
+
+	box->set_to_given_coords(new_box.left(), new_box.bottom(), new_box.right(), new_box.top());
+
+	return (shrink_left && new_box.left() > core_box->left()) || (!shrink_left && new_box.right() < core_box->right());
+}
+
+/**
+ * @name shrink_box_using_exclusion
+ *
+ * Rebuilds the box using the core box and all the boxes from the TO_ROW contained by the original box
+ * with the exception of any boxes that are in the exclude_box.
+ *
+ * Returns true if the resulting box has changed size (i.e. shrunk)
+ *
+ * Example:
+ * The core_box is (40,90)->(70,102).
+ * The box is (35,45)->(70,102).
+ * The exclude_box is (25,10)->(45,100)
+ * The TO_ROW contains the blobs:
+ * - (12,70) ->(41,85)
+ * - (100,80)->(120,98)
+ * - (42,80) ->(69,99)
+ * - (45,65) ->(65,85)
+ * - (0,10)  ->(30,132)
+ * - (70,90) ->(90,102)
+ * - (75,30) ->(85,40)
+ * - (35,45) ->(45,75)
+ * - (50,50) ->(60,60)
+ * Then the TBOX excludes (35,45) ->(45,75) and shrink to (40,50)->(70,102)
+ * Note: box coordinates given as (bottom left x, bottom left y)->(top right x, top right y)
+ *
+ */
+BOOL8 shrink_box_using_exclusion(TBOX *core_box, TBOX *box, TBOX *exclude_box, TO_ROW *row,
+		TO_BLOCK *block, BOOL8 use_block_in_cjk_check){
+
+	// Rebuild the box from the core box
+	TBOX new_box = TBOX(core_box->left(), core_box->bottom(), core_box->right(), core_box->top());
+	BOOL8 checking_block = false;
+	BLOBNBOX_IT blob_it = row->blob_list();
+	TBOX temp_box = TBOX(core_box->left(), core_box->bottom(), core_box->right(), core_box->top());
+
+	do{
+		// Check either the row or the block
+		blob_it = checking_block ? &block->blobs : row->blob_list();
+
+		// Go through the blobs in the row
+		blob_it.move_to_first ();
+		for (blob_it.mark_cycle_pt(); !blob_it.cycled_list(); blob_it.forward()) {
+
+			temp_box.set_left(blob_it.data()->bounding_box().left());
+			temp_box.set_bottom(blob_it.data()->bounding_box().bottom());
+			temp_box.set_right(blob_it.data()->bounding_box().right());
+			temp_box.set_top(blob_it.data()->bounding_box().top());
+
+
+			// Add to the new box if the blob is in the old box and not touching the right edge
+			if((box->contains(blob_it.data()->bounding_box()) && !exclude_box->contains(blob_it.data()->bounding_box()))
+					&& (!checking_block || box_major_y_overlap_in_row(&temp_box, row))){
+				if(blob_it.data()->bounding_box().top() > new_box.top()){
+					new_box.set_top (blob_it.data()->bounding_box().top());
+				}
+				if(blob_it.data()->bounding_box().bottom() < new_box.bottom()){
+					new_box.set_bottom (blob_it.data()->bounding_box().bottom());
+				}
+				if(blob_it.data()->bounding_box().left() < new_box.left()){
+					new_box.set_left (blob_it.data()->bounding_box().left());
+				}
+				if(blob_it.data()->bounding_box().right() > new_box.right()){
+					new_box.set_right (blob_it.data()->bounding_box().right());
+				}
+			}
+		}
+
+		// Toggle checking the block
+		if(use_block_in_cjk_check){
+			checking_block = !checking_block;
+		}
+
+	} while(checking_block && use_block_in_cjk_check);
+
+	// Shrink the box
+	BOOL8 shrunk = !(new_box == *box);
+
+//	tprintf("shrink_box_using_exclusion KRIS - (%d,%d) (%d,%d) shrunk to is (%d,%d) (%d,%d) return %s.\n",
+//				box->left(), box->bottom(), box->right(), box->top(),
+//				new_box.left(), new_box.bottom(), new_box.right(), new_box.top(),
+//				shrunk ? "true" : "false");
+
+	box->set_to_given_coords(new_box.left(), new_box.bottom(), new_box.right(), new_box.top());
+
+	return shrunk;
+}
+
+/**
+ * @name box_resembles_cjk_character
+ *
+ * Checks if the supplied box resembles a CJK character.
+ * A CJK character must meet the following characteristics:
+ * 1) Cannot be too large
+ * 		width < line_size && height < line_size
+ * 2) Cannot be too small
+ * 		width > max_small_blob && height > max_small_blob
+ * 3) Should be square
+ * 		kCJKXHeightFraction < width / height < 1 / kCJKXHeightFraction
+ *		(Assuming kCJKXHeightFraction = 0.8 gives us 0.8 <  width / height < 1.25)
+ *
+ * returns true if the box resembles a CJK character, false otherwise
+ *
+ */
+BOOL8 box_resembles_cjk_character(TBOX *box, float line_size){
+
+	float max_small_blob = line_size * tesseract::CCStruct::kCJKSmallLimit;
+	float box_ratio = (float) box->width() / (float) box->height();
+//	tprintf("box_resembles_cjk_character KRIS - (%d,%d) (%d,%d) box_ratio is %g\n",
+//			box->left(), box->bottom(),
+//			box->right(), box->top(),
+//			box_ratio);
+
+	return box->width() < line_size && box->height() < line_size
+			&& box->width() > max_small_blob && box->height() > max_small_blob
+			&& box_ratio > tesseract::CCStruct::kCJKXHeightFraction
+			&& box_ratio < 1 / tesseract::CCStruct::kCJKXHeightFraction;
+}
+
+/**
+ * @name box_resembles_cjk_noise
+ *
+ * Checks if the supplied box resembles a CJK noise.
+ * CJK noise must be sufficiently small enough.
+ *
+ * returns true if the box resembles noise, false otherwise
+ *
+ */
+BOOL8 box_resembles_cjk_noise(TBOX *box, float line_size){
+	return box->width() < line_size * tesseract::CCStruct::kCJKNoiseLimit
+			&& box->height() < line_size * tesseract::CCStruct::kCJKNoiseLimit;
+}
+
+/**
+ * @name box_resembles_cjk_ignorable
+ *
+ * Checks if the supplied box resembles something that we're pretty sure is NOT a character.
+ * This means it is either:
+ * - too small (width and height is less than 50% of max small CJK blob)
+ * - too thin (width is less than 25% of max small CJK blob)
+ *
+ * Note that the case of height is less than 25% can be a valid character (namely yi (one))
+ *
+ *
+ * returns true if the box can safely be ignored, false otherwise
+ *
+ */
+BOOL8 box_resembles_cjk_ignorable(TBOX *box, float line_size){
+	return (box->width() < line_size * tesseract::CCStruct::kCJKSmallLimit / 2
+			&& box->height() < line_size * tesseract::CCStruct::kCJKSmallLimit / 2)
+			|| box->width() < line_size * tesseract::CCStruct::kCJKSmallLimit / 4;
+}
+
+/**
+ * @name box_at_cjk_line_intercept
+ *
+ * Checks if the supplied box is at the line intercept.
+ * We assume that a box is at the line intercept if:
+ * a) it has no boxes below it.
+ * 	  We must ignore stacked part of characters (see fu (luck) or hui (can))
+ * b) it is not a "prefix" box (less than 1/2 of average character height) above the bottom of adjoining block
+ *    We must ignore prefixed part of character (see chi (eat) or wan (evening))
+ *
+ * returns true if it is save to assume that the box is at the line intercept
+ *
+ */
+BOOL8 box_at_cjk_line_intercept(TBOX *box, TO_ROW *row){
+
+	int left = box->left();
+	int right = box->right();
+	int bottom = box->bottom();
+	bool above_box = false;
+	float line_size = row->max_y () - row->min_y ();
+	bool prefix_box = box->height() < line_size / 2;
+
+	// Go through the blobs in the row
+	BLOBNBOX_IT blob_it = row->blob_list();
+	blob_it.move_to_first ();
+	for (blob_it.mark_cycle_pt(); !blob_it.cycled_list() && !above_box; blob_it.forward()) {
+
+		// Check if the box overlaps
+		left = (box->left() > blob_it.data()->bounding_box().left()) ?
+				box->left() : blob_it.data()->bounding_box().left();
+		right = (box->right() < blob_it.data()->bounding_box().right()) ?
+				box->right() : blob_it.data()->bounding_box().right();
+
+		// If the overlap exceeds 50% and the blob is below the box
+		above_box = above_box || (((float)(right - left)) / ((float) box->width()) > 0.5
+				&& box->bottom() > blob_it.data()->bounding_box().bottom());
+
+		// If the box is adjacent to another box and which is lower than it.
+		prefix_box = prefix_box
+				&& ((box->right() + 0.5 * line_size > blob_it.data()->bounding_box().left()
+						&& box->right() < blob_it.data()->bounding_box().right())
+					|| (box->left() - 0.5 * line_size < blob_it.data()->bounding_box().right()
+							&& box->left() > blob_it.data()->bounding_box().left()))
+				&& box->bottom() > blob_it.data()->bounding_box().bottom();
+	}
+
+	return !above_box && !prefix_box;
+}
+
+/**
+ * @name box_fits_cjk_row
+ *
+ * Checks if the supplied box can be added to a CJK row
+ * Tries to combine the supplied core_box with blobs already present in the row until it
+ * can find a combination that resembles a CJK character.
+ *
+ * returns true if a combination is found, false otherwise
+ *
+ */
+BOOL8 box_fits_cjk_row(TBOX *core_box, TO_ROW *dest_row, TO_BLOCK *block, BOOL8 use_block_in_cjk_check){
+
+	float line_size = block->line_size;
+	TBOX expanded_core = TBOX(core_box->left(),core_box->bottom(),core_box->right(),core_box->top());
+	expand_box_using_horz_overlap(&expanded_core, dest_row, block, use_block_in_cjk_check);
+
+	bool box_fits = false;
+
+	// Make sure that the resulting character is not too large
+	if(core_box->width() < line_size && core_box->height() < line_size){
+
+		// Create an expanded box
+		TBOX test_box = TBOX(expanded_core.left(),expanded_core.bottom(),expanded_core.right(),expanded_core.top());
+		TBOX inner_box = TBOX(expanded_core.left(),expanded_core.bottom(),expanded_core.right(),expanded_core.top());
+		bool expanded = true;
+		bool expand_left = true;
+
+		int counter = 0;
+		int counter2 = 0;
+		// Try to combine the noise with row blobs until they resemble a CJK character
+		while(!box_resembles_cjk_character(&test_box, line_size) && expanded && !box_fits && counter < 20){
+			counter++;
+			counter2 = 0;
+
+			// If the box is too large, try shrinking it by removing an inner box from the opposite side
+			while(counter2 < 20 && (test_box.width() > line_size || test_box.height() > line_size)){
+
+//				tprintf("box_fits_cjk_row KRIS - removing box %d-%d (expand %s, %s block) (%d,%d) (%d,%d) (%d,%d) (%d,%d) \n",
+//						counter, counter2, expand_left ? "left" : "right", use_block_in_cjk_check ? "" : "not",
+//						test_box.left(), test_box.bottom(), test_box.right(), test_box.top(),
+//						inner_box.left(), inner_box.bottom(), inner_box.right(), inner_box.top());
+
+				// the the outermost blob
+				get_box_inside_box(&test_box, &inner_box, dest_row, block, use_block_in_cjk_check, !expand_left);
+
+//				tprintf("box_fits_cjk_row KRIS - removing box %d-%d (expand %s, %s block) (%d,%d) (%d,%d) (%d,%d) (%d,%d) check \n",
+//						counter, counter2, expand_left ? "left" : "right", use_block_in_cjk_check ? "" : "not",
+//						test_box.left(), test_box.bottom(), test_box.right(), test_box.top(),
+//						inner_box.left(), inner_box.bottom(), inner_box.right(), inner_box.top());
+
+
+				// expand the outermost blob to include its horizontal overlap
+				expand_box_using_horz_overlap(&inner_box, dest_row, block, use_block_in_cjk_check);
+
+				// exit the loop once your core box is at the edge (you can't shrink from the edge)
+				if((!expand_left && inner_box.right() > expanded_core.left())
+						|| (expand_left && inner_box.left() < expanded_core.right())){
+//					tprintf("box_fits_cjk_row KRIS - reached the edge of the blob. \n");
+					break;
+				}
+
+				// exit the loop once you can no longer shrink the test_box
+				if(!shrink_box_using_exclusion(&expanded_core, &test_box, &inner_box, dest_row, block, use_block_in_cjk_check)){
+//					tprintf("box_fits_cjk_row KRIS - could not shrink using exclusion. \n");
+					break;
+				}
+
+				// increment to avoid running too long
+				counter2++;
+
+			}
+
+			// Expand using a blob from the other side
+			expanded = expand_box_using_direction(&expanded_core, &test_box, dest_row, block, use_block_in_cjk_check, expand_left);
+			if(expanded){
+				expand_box_using_horz_overlap(&test_box, dest_row, block, use_block_in_cjk_check);
+			} else if(expand_left) {
+				expanded = true;
+				expand_left = false;
+			}
+		}
+
+		// Add the noise
+		box_fits = box_resembles_cjk_character(&test_box, line_size);
+
+//		tprintf("box_fits_cjk_row KRIS - box (%d,%d) (%d,%d) from (%d,%d) (%d,%d) %s in (%d,%d) (%d,%d) | ratio = %g. \n",
+//				expanded_core.left(), expanded_core.bottom(), expanded_core.right(), expanded_core.top(),
+//				core_box->left(), core_box->bottom(), core_box->right(), core_box->top(),
+//				box_fits ? "fits" : "not fits", test_box.left(), test_box.bottom(), test_box.right(), test_box.top(),
+//				((float) test_box.width() / (float) test_box.height()));
+
+	} else {
+//		tprintf("box_fits_cjk_row KRIS - box (%d,%d) (%d,%d) from (%d,%d) (%d,%d) is too large.\n",
+//				expanded_core.left(), expanded_core.bottom(), expanded_core.right(), expanded_core.top(),
+//				core_box->left(), core_box->bottom(), core_box->right(), core_box->top());
+	}
+
+
+	return box_fits;
+}
+
+/**
+ * @name box_major_y_overlap_in_row
+ *
+ * Check if the box has major y overlap with the row.
+ */
+BOOL8 box_major_y_overlap_in_row(TBOX *box, TO_ROW *row){
+
+	float overlap = (float) box->height();
+	float g_length = sqrt (1 + row->line_m() * row->line_m());
+	float block_skew = (1 - 1 / g_length) * box->bottom() + row->line_m() / g_length * box->left();
+	float top = box->top() - block_skew;
+	float bottom = box->bottom() - block_skew;
+
+	if (row->min_y() > bottom) {
+		overlap -= row->min_y() - bottom;
+	}
+
+	if (row->max_y() < top) {
+		overlap -= top - row->max_y();
+	}
+//	tprintf("box_major_y_overlap_in_row KRIS - go through rows %g, %g | box (%g,%g) | overlap=%g | height/2=%d. \n",
+//			row->min_y(), row->max_y(), bottom, top, overlap, box.height() / 2);
+	return (overlap >= box->height() / 2);
+}
+
+/**
+ * @name assign_noise_to_cjk_rows
+ *
+ * Add noise blobs to the created rows.
+ * Please only use this method after all the non-noise blobs have been added.
+ */
+void assign_noise_to_cjk_rows(
+        TO_BLOCK *block,      //block to do
+        float *gradient,      //block skew
+        BOOL8 force_add_if_in_row, // always add a blob if it is in the middle of the row
+        BOOL8 use_block_in_cjk_check  // use blobs not yet in the row when checking CJK fit
+        ){
+
+	OVERLAP_STATE overlap_result;  //what to do with it
+	float ycoord;                  //current y
+	float top, bottom;             //of blob
+	float g_length = 1.0f;         //from gradient
+	inT16 row_count;               //no of rows
+	inT16 left_x;                  //left edge
+	inT16 last_x;                  //previous edge
+	float block_skew;              //y delta
+	float near_dist;               //dist to nearest row
+	ICOORD testpt;                 //testing only
+	BLOBNBOX *blob;                //current blob
+	TO_ROW *row;                   //current row
+	TO_ROW *dest_row = NULL;       //row to put blob in
+	TBOX core_box = TBOX(0,0,0,0);
+
+	// Iterators
+	BLOBNBOX_IT blob_it = &block->blobs;
+	TO_ROW_IT row_it = block->get_rows ();
+
+	// Get the vertical center of the block
+	ycoord = (block->block->bounding_box ().bottom () + block->block->bounding_box ().top ()) / 2.0f;
+	if (gradient != NULL)
+		g_length = sqrt (1 + *gradient * *gradient);
+
+	// Output the left side of the block to screen
+	#ifndef GRAPHICS_DISABLED
+		if (drawing_skew)
+			to_win->SetCursor(block->block->bounding_box().left(), ycoord);
+	#endif
+
+	// Set a test point and sort the blobs
+	testpt = ICOORD (textord_test_x, textord_test_y);
+	blob_it.sort (blob_x_order);
+	block_skew = 0.0f;
+	row_count = row_it.length ();  //might have rows
+
+	// Get the outer left edge
+	if (!blob_it.empty ()) {
+		left_x = blob_it.data()->bounding_box().left ();
+	} else {
+		left_x = block->block->bounding_box().left ();
+	}
+	last_x = left_x;
+
+	// Go through all the blobs (note: only if the row iterator is not empty)
+	for (blob_it.mark_cycle_pt(); !blob_it.cycled_list() && !row_it.empty(); blob_it.forward()) {
+
+		// Get the blob
+		blob = blob_it.data ();
+
+		// Get the block skew
+		if (gradient != NULL) {
+			block_skew = (1 - 1 / g_length) * blob->bounding_box().bottom()
+				+ * gradient / g_length * blob->bounding_box().left();
+		}
+
+		// Get the default values for this blob
+		last_x = blob->bounding_box().left();
+		top = blob->bounding_box().top() - block_skew;
+		bottom = blob->bounding_box().bottom() - block_skew;
+		overlap_result = NEW_ROW;
+
+		// Output the blob to screen
+		#ifndef GRAPHICS_DISABLED
+			if (drawing_skew)
+				to_win->DrawTo(blob->bounding_box ().left (), ycoord + block_skew);
+		#endif
+
+		// Loop through the rows until you find one that is not above the blob
+		for (row_it.move_to_first (); !row_it.at_last () && row_it.data ()->min_y () > top; row_it.forward ());
+			row = row_it.data ();
+//			tprintf("assign_noise_to_cjk_rows KRIS - go through rows %g, %g. \n",row->min_y (), row->max_y ());
+		// Assign the blob to the row if there is sufficient overlap
+		if (row->min_y () <= top && row->max_y () >= bottom) {
+//			tprintf("assign_noise_to_cjk_rows KRIS - sufficient overlap. \n");
+			dest_row = row;
+			overlap_result = most_overlapping_row (&row_it, dest_row,
+					top, bottom,
+					block->line_size,
+					blob->bounding_box ().
+					contains (testpt));
+
+			// We force the user to save
+			if (overlap_result == NEW_ROW)
+				overlap_result = ASSIGN;
+
+		} else if (overlap_result == NEW_ROW){
+//			tprintf("assign_noise_to_cjk_rows KRIS - new row (i.e. no row fits ");
+
+			// The distance between the top of the blob and the bottom of the previous row
+			near_dist = row_it.data_relative(-1)->min_y () - top;
+
+			if (bottom < row->min_y()) {
+//				tprintf("_ the blob is below the row . \n");
+				// the blob is below the row (use descender to check if it is close enough)
+				if(row->min_y() - bottom <=
+						(block->line_spacing - block->line_size) * tesseract::CCStruct::kCJKDescenderFraction){
+					overlap_result = ASSIGN;
+					dest_row = row;
+				}
+			}else if (near_dist > 0 && near_dist < bottom - row->max_y ()) {
+//				tprintf("_ the blob is below the previous row . \n");
+				// the blob is below the previous row (cycle back and use descender to check if it is close enough)
+				row_it.backward ();
+				dest_row = row_it.data ();
+				if(dest_row->min_y() - bottom <=
+						(block->line_spacing - block->line_size) * tesseract::CCStruct::kCJKDescenderFraction){
+					overlap_result = ASSIGN;
+					dest_row = row;
+				}
+			} else {
+//				tprintf("_ the blob is above the previous row . \n");
+				// the blob is above the row (use ascender to check if it is close enough
+				if(top - row->max_y() <=
+						(block->line_spacing - block->line_size) * tesseract::CCStruct::kCJKDescenderFraction){
+					overlap_result = ASSIGN;
+					dest_row = row;
+				}
+			}
+		}
+
+//		if(dest_row == NULL){
+//			if(overlap_result == ASSIGN){
+//			  tprintf("assign_noise_to_cjk_rows KRIS ASSIGN - (%d,%d) (%d,%d) |(btm, top)(%g,%g) |no row |line_size=%g\n",
+//					  blob->bounding_box().left(), blob->bounding_box().bottom(),
+//					  blob->bounding_box().right(), blob->bounding_box().top(), bottom, top, block->line_size);
+//			} else if(overlap_result == NEW_ROW) {
+//			  tprintf("assign_noise_to_cjk_rows KRIS NEW_ROW - (%d,%d) (%d,%d) |(btm, top)(%g,%g) |no row |line_size=%g\n",
+//					  blob->bounding_box().left(),blob->bounding_box().bottom(),
+//					  blob->bounding_box().right(), blob->bounding_box().top(), bottom, top, block->line_size);
+//			} else if(overlap_result == REJECT) {
+//			  tprintf("assign_noise_to_cjk_rows KRIS REJECT - (%d,%d) (%d,%d) |(btm, top)(%g,%g) |no row |line_size=%g\n",
+//					  blob->bounding_box().left(),blob->bounding_box().bottom(),
+//					  blob->bounding_box().right(), blob->bounding_box().top(), bottom, top, block->line_size);
+//			} else {
+//			  tprintf("assign_noise_to_cjk_rows KRIS ELSE - (%d,%d) (%d,%d) |(btm, top)(%g,%g) |no row |line_size=%g\n",
+//					  blob->bounding_box().left(),blob->bounding_box().bottom(),
+//					  blob->bounding_box().right(), blob->bounding_box().top(), bottom, top, block->line_size);
+//			}
+//		} else {
+//			if(overlap_result == ASSIGN){
+//			  tprintf("assign_noise_to_cjk_rows KRIS ASSIGN - (%d,%d) (%d,%d) |(btm, top) (%g,%g) |row (%g,%g) |line_size=%g\n",
+//					  blob->bounding_box().left(),blob->bounding_box().bottom(),
+//					  blob->bounding_box().right(), blob->bounding_box().top(), bottom, top, dest_row->min_y(), dest_row->max_y(), block->line_size);
+//			} else if(overlap_result == NEW_ROW) {
+//			  tprintf("assign_noise_to_cjk_rows KRIS NEW_ROW - (%d,%d) (%d,%d) |(btm, top) (%g,%g) |row (%g,%g) |line_size=%g\n",
+//					  blob->bounding_box().left(),blob->bounding_box().bottom(),
+//					  blob->bounding_box().right(), blob->bounding_box().top(), bottom, top, dest_row->min_y(), dest_row->max_y(), block->line_size);
+//			} else if(overlap_result == REJECT) {
+//			  tprintf("assign_noise_to_cjk_rows KRIS REJECT - (%d,%d) (%d,%d) |(btm, top) (%g,%g) |row (%g,%g) |line_size=%g\n",
+//					  blob->bounding_box().left(),blob->bounding_box().bottom(),
+//					  blob->bounding_box().right(), blob->bounding_box().top(), bottom, top, dest_row->min_y(), dest_row->max_y(), block->line_size);
+//			} else {
+//			  tprintf("assign_noise_to_cjk_rows KRIS ELSE - (%d,%d) (%d,%d) |(btm, top) (%g,%g) |row (%g,%g) |line_size=%g\n",
+//					  blob->bounding_box().left(),blob->bounding_box().bottom(),
+//					  blob->bounding_box().right(), blob->bounding_box().top(), bottom, top, dest_row->min_y(), dest_row->max_y(), block->line_size);
+//			}
+//		}
+
+		// Assign the blob
+		if (overlap_result == ASSIGN){
+			// Create a box using the blob coordinates
+			core_box.set_left(blob->bounding_box().left());
+			core_box.set_bottom(blob->bounding_box().bottom());
+			core_box.set_right(blob->bounding_box().right());
+			core_box.set_top(blob->bounding_box().top());
+
+			// Add the box if it fits in the row.
+			// This really long if-statement contains the following conditions:
+			// Allow if:
+			// 1) 	force_add_if_in_row == true (for noise that is valid, but will fail the CJK check)
+			// 		AND the box is completely in the row (min_y < box < max_y)
+			//			AND the box is not too small (either height or width should be 50% of line_size)
+			//			OR the box is in the middle of the row (min_y + 12% < box < max_y - 12%) [see kCJKNoiseLimit]
+			// 2)	the box fits the CJK row (i.e. can be combined with other blobs to make a square CJK character)
+			float max_small_blob = (float) (block->line_size * tesseract::CCStruct::kCJKSmallLimit);
+			float max_noise_blob = (float) (block->line_size * tesseract::CCStruct::kCJKNoiseLimit);
+			if(box_fits_cjk_row(&core_box, dest_row, block, use_block_in_cjk_check) || (force_add_if_in_row
+					&& ((top < dest_row->max_y() && bottom > dest_row->min_y()
+							&& (core_box.height() > max_small_blob || core_box.width() > max_small_blob))
+					|| (top < dest_row->max_y() - max_noise_blob && bottom > dest_row->min_y() + max_noise_blob)))
+				){
+
+//				tprintf("assign_noise_to_cjk_rows KRIS - add noise YES (%d,%d) (%d,%d) (%d,%d) (%d,%d) %s to row %g -> %g\n",
+//						blob->bounding_box().left(), blob->bounding_box().bottom(),
+//						blob->bounding_box().right(), blob->bounding_box().top(),
+//						core_box.left(), core_box.bottom(), core_box.right(), core_box.top(),
+//						force_add_if_in_row && top < dest_row->max_y() && bottom > dest_row->min_y() ? "forced" : "",
+//						row->min_y (), row->max_y ());
+
+				dest_row->add_blob (blob_it.extract (), top, bottom, block->line_size);
+			} else {
+//				tprintf("assign_noise_to_cjk_rows KRIS - add noise NON (%d,%d) (%d,%d) to row %g -> %g\n",
+//						blob->bounding_box().left(), blob->bounding_box().bottom(),
+//						blob->bounding_box().right(), blob->bounding_box().top(),
+//						row->min_y (), row->max_y ());
+			}
+
+			// Order the rows according to min_y
+			while (!row_it.at_first() && row_it.data()->min_y() > row_it.data_relative(-1)->min_y()) {
+		        row = row_it.extract();
+		        row_it.backward();
+		        row_it.add_before_then_move(row);
+			}
+			while (!row_it.at_last() && row_it.data()->min_y() < row_it.data_relative(1)->min_y()) {
+		        row = row_it.extract();
+		        row_it.forward();
+		        row_it.add_after_then_move(row);
+			}
+
+			// Add the blobs in this row to the added blob iterator
+			BLOBNBOX_IT added_blob_it(dest_row->blob_list());
+			added_blob_it.move_to_last();
+			TBOX prev_box = added_blob_it.data_relative(-1)->bounding_box();
+
+			// Adjust the block skew accordingly
+			if (dest_row->blob_list()->singleton() || !prev_box.major_x_overlap(blob->bounding_box())) {
+				int blob_shift = blob->bounding_box().bottom() -  prev_box.bottom();
+				if(blob_shift < 0){ blob_shift = 0 - blob_shift; }
+				if(blob_shift < block->line_size / 3){
+					block_skew = (blob->bounding_box().bottom() - dest_row->initial_min_y());
+				}
+			}
+		}
+	}
+
+	// Discard empty rows.
+	for (row_it.mark_cycle_pt(); !row_it.cycled_list(); row_it.forward()) {
+//		outputBlobIterator("assign_noise_to_cjk_rows", "rowblobs", row_it.data()->blob_list());
+		if (row_it.data()->blob_list()->empty())
+			delete row_it.extract();
+	}
+
+//	  tprintf("assign_noise_to_cjk_rows KRIS end. \n");
+
+}
+
 
 /**
  * @name assign_blobs_to_rows
@@ -2421,8 +3752,7 @@ void assign_blobs_to_rows(                      //find lines
       && last_x - left_x > block->line_size * 2
     && textord_interpolating_skew) {
       //                      tprintf("Interpolating skew from %g",block_skew);
-      block_skew *= (float) (blob->bounding_box ().left () - left_x)
-        / (last_x - left_x);
+      block_skew *= (float) (blob->bounding_box ().left () - left_x) / (last_x - left_x);
       //                      tprintf("to %g\n",block_skew);
     }
     last_x = blob->bounding_box ().left ();
@@ -2483,9 +3813,40 @@ void assign_blobs_to_rows(                      //find lines
           }
         }
       }
+
+      //      if(dest_row == NULL){
+      //          if(overlap_result == ASSIGN){
+      //        	  tprintf("assign_blobs_to_rows KRIS ASSIGN - blob (%d,%d) | (btm, top) (%g,%g) | no row | line_size=%g \n",
+      //        			  blob->bounding_box().bottom(), blob->bounding_box().top(), bottom, top, block->line_size);
+      //          } else if(overlap_result == NEW_ROW) {
+      //        	  tprintf("assign_blobs_to_rows KRIS NEW_ROW - blob (%d,%d) | (btm, top) (%g,%g) | no row | line_size=%g \n",
+      //        			  blob->bounding_box().bottom(), blob->bounding_box().top(), bottom, top, block->line_size);
+      //          } else if(overlap_result == REJECT) {
+      //        	  tprintf("assign_blobs_to_rows KRIS REJECT - blob (%d,%d) | (btm, top) (%g,%g) | no row | line_size=%g \n",
+      //        			  blob->bounding_box().bottom(), blob->bounding_box().top(), bottom, top, block->line_size);
+      //          } else {
+      //        	  tprintf("assign_blobs_to_rows KRIS ASSIGN??? - blob (%d,%d) | (btm, top) (%g,%g) | no row | line_size=%g \n",
+      //        			  blob->bounding_box().bottom(), blob->bounding_box().top(), bottom, top, block->line_size);
+      //          }
+      //      } else {
+      //          if(overlap_result == ASSIGN){
+      //        	  tprintf("assign_blobs_to_rows KRIS ASSIGN - blob (%d,%d) | (btm, top) (%g,%g) | row (%g,%g)| line_size=%g \n",
+      //        			  blob->bounding_box().bottom(), blob->bounding_box().top(), bottom, top, dest_row->min_y(), dest_row->max_y(), block->line_size);
+      //          } else if(overlap_result == NEW_ROW) {
+      //        	  tprintf("assign_blobs_to_rows KRIS NEW_ROW - blob (%d,%d) | (btm, top) (%g,%g) | row (%g,%g) | line_size=%g \n",
+      //        			  blob->bounding_box().bottom(), blob->bounding_box().top(), bottom, top, dest_row->min_y(), dest_row->max_y(), block->line_size);
+      //          } else if(overlap_result == REJECT) {
+      //        	  tprintf("assign_blobs_to_rows KRIS REJECT - blob (%d,%d) | (btm, top) (%g,%g) | row (%g,%g) | line_size=%g \n",
+      //        			  blob->bounding_box().bottom(), blob->bounding_box().top(), bottom, top, dest_row->min_y(), dest_row->max_y(), block->line_size);
+      //          } else {
+      //        	  tprintf("assign_blobs_to_rows KRIS ASSIGN??? - blob (%d,%d) | (btm, top) (%g,%g) | row (%g,%g) | line_size=%g \n",
+      //        			  blob->bounding_box().bottom(), blob->bounding_box().top(), bottom, top, dest_row->min_y(), dest_row->max_y(), block->line_size);
+      //          }
+      //      }
+
       if (overlap_result == ASSIGN)
-        dest_row->add_blob (blob_it.extract (), top, bottom,
-          block->line_size);
+        dest_row->add_blob (blob_it.extract (), top, bottom, block->line_size);
+
       if (overlap_result == NEW_ROW) {
         if (make_new_rows && top - bottom < block->max_blob_size) {
           dest_row =
@@ -2507,8 +3868,12 @@ void assign_blobs_to_rows(                      //find lines
     }
     else if (make_new_rows && top - bottom < block->max_blob_size) {
       overlap_result = NEW_ROW;
-      dest_row =
-        new TO_ROW(blob_it.extract(), top, bottom, block->line_size);
+      if(use_cjk_rows){
+    	  dest_row = new TO_ROW(blob_it.extract(), get_initial_max_y(blob, &block->blobs, block->line_size),
+    			  get_initial_min_y(blob, &block->blobs, block->line_size), block->line_size);
+      } else {
+    	  dest_row = new TO_ROW(blob_it.extract(), top, bottom, block->line_size);
+      }
       row_count++;
       row_it.add_after_then_move(dest_row);
       smooth_factor = 1.0 / (row_count * textord_skew_lag +
@@ -2542,12 +3907,18 @@ void assign_blobs_to_rows(                      //find lines
       BLOBNBOX_IT added_blob_it(dest_row->blob_list());
       added_blob_it.move_to_last();
       TBOX prev_box = added_blob_it.data_relative(-1)->bounding_box();
-      if (dest_row->blob_list()->singleton() ||
-          !prev_box.major_x_overlap(blob->bounding_box())) {
-        block_skew = (1 - smooth_factor) * block_skew
-            + smooth_factor * (blob->bounding_box().bottom() -
-            dest_row->initial_min_y());
+      if ((dest_row->blob_list()->singleton() || !prev_box.major_x_overlap(blob->bounding_box()))
+    		  && overlap_result != NEW_ROW) {
+
+          int blob_shift = blob->bounding_box().bottom() -  prev_box.bottom();
+          if(blob_shift < 0){ blob_shift = 0 - blob_shift; }
+          if(!use_cjk_rows || blob_shift < block->line_size / 4){
+			block_skew = (1 - smooth_factor) * block_skew
+				+ smooth_factor * (blob->bounding_box().bottom() -
+				dest_row->initial_min_y());
+          }
       }
+
     }
   }
   for (row_it.mark_cycle_pt(); !row_it.cycled_list(); row_it.forward()) {
