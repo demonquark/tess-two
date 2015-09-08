@@ -23,6 +23,7 @@ package com.googlecode.leptonica.android;
  */
 public class Scale {
     static {
+        System.loadLibrary("pngt");
         System.loadLibrary("lept");
     }
 
@@ -96,6 +97,23 @@ public class Scale {
     }
 
     /**
+     * Scales the Pix to the specified scale without sharpening.
+     *
+     * @param pixs the source Pix (1, 2, 4, 8, 16 and 32 bpp)
+     * @param scale scaling factor for both X and Y
+     * @return a Pix scaled while maintaining its aspect ratio
+     */
+    public static Pix scaleWithoutSharpening(Pix pixs, float scale) {
+        if (pixs == null)
+            throw new IllegalArgumentException("Source pix must be non-null");
+        if (scale <= 0.0f)
+            throw new IllegalArgumentException("Scaling factor must be positive");
+
+        return new Pix(nativeScaleGeneral(pixs.getNativePix(), scale, scale,
+                0f, 0));
+    }
+
+    /**
      * Scales the Pix to specified x and y scale. If no scaling is required,
      * returns a clone of the source Pix.
      *
@@ -112,7 +130,7 @@ public class Scale {
         if (scaleY <= 0.0f)
             throw new IllegalArgumentException("Y scaling factor must be positive");
 
-        long nativePix = nativeScale(pixs.mNativePix, scaleX, scaleY);
+        long nativePix = nativeScale(pixs.getNativePix(), scaleX, scaleY);
 
         if (nativePix == 0)
             throw new RuntimeException("Failed to natively scale pix");
@@ -125,4 +143,6 @@ public class Scale {
     // ***************
 
     private static native long nativeScale(long nativePix, float scaleX, float scaleY);
+    private static native long nativeScaleGeneral(long nativePix, float scaleX, float scaleY, float sharpfract, int sharpwidth);
+
 }

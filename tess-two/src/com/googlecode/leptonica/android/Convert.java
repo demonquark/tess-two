@@ -23,6 +23,7 @@ package com.googlecode.leptonica.android;
  */
 public class Convert {
     static {
+        System.loadLibrary("pngt");
         System.loadLibrary("lept");
     }
     
@@ -36,7 +37,7 @@ public class Convert {
         if (pixs == null)
             throw new IllegalArgumentException("Source pix must be non-null");
 
-        long nativePix = nativeConvertTo8(pixs.mNativePix);
+        long nativePix = nativeConvertTo8(pixs.getNativePix());
 
         if (nativePix == 0)
             throw new RuntimeException("Failed to natively convert pix");

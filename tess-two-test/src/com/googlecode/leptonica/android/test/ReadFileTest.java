@@ -16,77 +16,74 @@
 
 package com.googlecode.leptonica.android.test;
 
-import android.graphics.Bitmap;
-import android.graphics.Bitmap.CompressFormat;
-import android.graphics.Canvas;
-import android.graphics.Color;
-import android.graphics.Paint;
-import android.graphics.Paint.Style;
-import android.graphics.Rect;
-import android.test.suitebuilder.annotation.SmallTest;
-
-import com.googlecode.leptonica.android.Pix;
-import com.googlecode.leptonica.android.ReadFile;
-
-import junit.framework.TestCase;
-
 import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
 
+import junit.framework.TestCase;
+import android.graphics.Bitmap;
+import android.graphics.Bitmap.CompressFormat;
+import android.test.suitebuilder.annotation.SmallTest;
+import android.util.Log;
+
+import com.googlecode.leptonica.android.Pix;
+import com.googlecode.leptonica.android.ReadFile;
+
 /**
- * @author alanv@google.com (Your Name Here)
+ * @author alanv@google.com (Alan Viverette)
  */
 public class ReadFileTest extends TestCase {
+
+    private static final String TAG = ReadFileTest.class.getSimpleName();
+
     @SmallTest
-    public void testReadBitmap() {
+    public void testReadBitmap_1x1() {
         testReadBitmap(1, 1, Bitmap.Config.ARGB_8888);
+    }
+
+    @SmallTest
+    public void testReadBitmap_100x100() {
+        testReadBitmap(100, 100, Bitmap.Config.ARGB_8888);
+    }
+
+    @SmallTest
+    public void testReadBitmap_640x480() {
         testReadBitmap(640, 480, Bitmap.Config.ARGB_8888);
     }
 
     private void testReadBitmap(int width, int height, Bitmap.Config format) {
-        Bitmap bmp = Bitmap.createBitmap(width, height, format);
-        Canvas canvas = new Canvas(bmp);
-        Paint paint = new Paint();
-
-        if (width > 1 && height > 1) {
-            // Paint the left half white
-            paint.setColor(Color.WHITE);
-            paint.setStyle(Style.FILL);
-            canvas.drawRect(new Rect(0, 0, width / 2 , height - 1), paint);
-
-            // Paint the right half black
-            paint.setColor(Color.BLACK);
-            paint.setStyle(Style.FILL);
-            canvas.drawRect(new Rect(width / 2, 0, width - 1, height - 1), paint);
-        }
-
+        Bitmap bmp = TestUtils.createTestBitmap(width, height, format);
         Pix pix = ReadFile.readBitmap(bmp);
 
         assertEquals(bmp.getWidth(), pix.getWidth());
         assertEquals(bmp.getHeight(), pix.getHeight());
 
-        if (width > 1 && height > 1) {
-            // Make sure the colors were preserved.
-            assertEquals(Color.WHITE, pix.getPixel(0, 0));
-            assertEquals(Color.BLACK, pix.getPixel(width - 1, height - 1));
-        }
+        float match = TestUtils.compareImages(pix, bmp);
+        Log.d(TAG, "match=" + match);
+        assertTrue("Images do not match.", (match >= 0.99f));
 
         bmp.recycle();
         pix.recycle();
     }
 
     @SmallTest
-    public void testReadFile() throws IOException {
-        File file = File.createTempFile("testReadFile", "jpg");
+    public void testReadFile_bmp() throws IOException {
+        File file = File.createTempFile("testReadFile", ".bmp");
         FileOutputStream fileStream = new FileOutputStream(file);
-        Bitmap bmp = Bitmap.createBitmap(640, 480, Bitmap.Config.RGB_565);
-        bmp.compress(CompressFormat.JPEG, 85, fileStream);
+        Bitmap bmp = TestUtils.createTestBitmap(100, 100, Bitmap.Config.RGB_565);
+        boolean compressed = bmp.compress(CompressFormat.PNG, 100, fileStream);
+
+        assertTrue(compressed);
+
         Pix pix = ReadFile.readFile(file);
 
         assertEquals(bmp.getWidth(), pix.getWidth());
         assertEquals(bmp.getHeight(), pix.getHeight());
+
+        float match = TestUtils.compareImages(pix, bmp);
+        Log.d(TAG, "match=" + match);
+        assertTrue("Images do not match.", (match >= 0.99f));
 
         fileStream.close();
         bmp.recycle();
@@ -94,17 +91,92 @@ public class ReadFileTest extends TestCase {
     }
 
     @SmallTest
-    public void testReadMem() throws IOException {
+    public void testReadFile_jpg() throws IOException {        
+        File file = File.createTempFile("testReadFile", ".jpg");
+        FileOutputStream fileStream = new FileOutputStream(file);
+        Bitmap bmp = TestUtils.createTestBitmap(100, 100, Bitmap.Config.RGB_565);
+        boolean compressed = bmp.compress(CompressFormat.JPEG, 85, fileStream);
+
+        assertTrue(compressed);
+
+        Pix pix = ReadFile.readFile(file);
+
+        assertEquals(bmp.getWidth(), pix.getWidth());
+        assertEquals(bmp.getHeight(), pix.getHeight());
+
+        float match = TestUtils.compareImages(pix, bmp);
+        Log.d(TAG, "match=" + match);
+        assertTrue("Images do not match.", (match >= 0.99f));
+
+        fileStream.close();
+        bmp.recycle();
+        pix.recycle();
+    }
+
+    @SmallTest
+    public void testReadFile_png() throws IOException {
+        File file = File.createTempFile("testReadFile", ".png");
+        FileOutputStream fileStream = new FileOutputStream(file);
+        Bitmap bmp = TestUtils.createTestBitmap(100, 100, Bitmap.Config.RGB_565);
+        boolean compressed = bmp.compress(CompressFormat.PNG, 100, fileStream);
+
+        assertTrue(compressed);
+
+        Pix pix = ReadFile.readFile(file);
+
+        assertEquals(bmp.getWidth(), pix.getWidth());
+        assertEquals(bmp.getHeight(), pix.getHeight());
+
+        float match = TestUtils.compareImages(pix, bmp);
+        Log.d(TAG, "match=" + match);
+        assertTrue("Images do not match.", (match >= 0.99f));
+
+        fileStream.close();
+        bmp.recycle();
+        pix.recycle();
+    }
+
+    @SmallTest
+    public void testReadMem_jpg() throws IOException {
         ByteArrayOutputStream byteStream = new ByteArrayOutputStream();
-        Bitmap bmp = Bitmap.createBitmap(640, 480, Bitmap.Config.RGB_565);
-        bmp.compress(CompressFormat.JPEG, 85, byteStream);
+        Bitmap bmp = TestUtils.createTestBitmap(100, 100, Bitmap.Config.RGB_565);
+        boolean compressed = bmp.compress(CompressFormat.JPEG, 85, byteStream);
+
+        assertTrue(compressed);
+
         byte[] encodedData = byteStream.toByteArray();
         Pix pix = ReadFile.readMem(encodedData);
 
         assertEquals(bmp.getWidth(), pix.getWidth());
         assertEquals(bmp.getHeight(), pix.getHeight());
 
-        // TODO(alanv): Need some way to test content, ex. Pix.getPixel(int, int)
+        float match = TestUtils.compareImages(pix, bmp);
+        Log.d(TAG, "match=" + match);
+        assertTrue("Images do not match.", (match >= 0.99f));
+
+        byteStream.close();
+        bmp.recycle();
+        encodedData = null;
+        pix.recycle();
+    }
+
+    @SmallTest
+    public void testReadMem_png() throws IOException {
+        ByteArrayOutputStream byteStream = new ByteArrayOutputStream();
+        Bitmap bmp = TestUtils.createTestBitmap(100, 100, Bitmap.Config.RGB_565);
+        boolean compressed = bmp.compress(CompressFormat.PNG, 100, byteStream);
+
+        assertTrue(compressed);
+
+        byte[] encodedData = byteStream.toByteArray();
+        Pix pix = ReadFile.readMem(encodedData);
+
+        assertEquals(bmp.getWidth(), pix.getWidth());
+        assertEquals(bmp.getHeight(), pix.getHeight());
+
+        float match = TestUtils.compareImages(pix, bmp);
+        Log.d(TAG, "match=" + match);
+        assertTrue("Images do not match.", (match >= 0.99f));
 
         byteStream.close();
         bmp.recycle();

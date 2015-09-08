@@ -44,28 +44,20 @@ jlong Java_com_googlecode_leptonica_android_Pix_nativeCreateFromData(JNIEnv *env
   return (jlong) pix;
 }
 
-jboolean Java_com_googlecode_leptonica_android_Pix_nativeGetData(JNIEnv *env, jclass clazz,
-                                                                 jlong nativePix, jbyteArray data) {
-  PIX *pix = (PIX *) nativePix;
-
-  jbyte *data_buffer = env->GetByteArrayElements(data, NULL);
-  l_uint8 *byte_buffer = (l_uint8 *) data_buffer;
-
-  size_t size = 4 * pixGetWpl(pix) * pixGetHeight(pix);
-  memcpy(byte_buffer, pixGetData(pix), size);
-
-  env->ReleaseByteArrayElements(data, data_buffer, 0);
-
-  return JNI_TRUE;
-}
-
-jint Java_com_googlecode_leptonica_android_Pix_nativeGetDataSize(JNIEnv *env, jclass clazz,
-                                                                 jlong nativePix) {
+jbyteArray Java_com_googlecode_leptonica_android_Pix_nativeGetData(JNIEnv *env, jclass clazz,
+                                                                   jlong nativePix, jbyteArray data) {
   PIX *pix = (PIX *) nativePix;
 
   size_t size = 4 * pixGetWpl(pix) * pixGetHeight(pix);
 
-  return (jint) size;
+  jbyteArray result = env->NewByteArray(size);
+  if (result == NULL) {
+    LOGE("Cannot allocate JNI Byte Array");
+    return NULL;
+  }
+
+  env->SetByteArrayRegion(result, 0, size, (jbyte *)pixGetData(pix));
+  return result;
 }
 
 jlong Java_com_googlecode_leptonica_android_Pix_nativeClone(JNIEnv *env, jclass clazz,
@@ -128,6 +120,12 @@ jint Java_com_googlecode_leptonica_android_Pix_nativeGetWidth(JNIEnv *env, jclas
   return (jint) pixGetWidth(pix);
 }
 
+jint Java_com_googlecode_leptonica_android_Pix_nativeGetRefCount(JNIEnv *env, jclass clazz,
+                                                              jlong nativePix) {
+  PIX *pix = (PIX *) nativePix;
+
+  return (jint) pixGetRefcount(pix);
+}
 jint Java_com_googlecode_leptonica_android_Pix_nativeGetHeight(JNIEnv *env, jclass clazz,
                                                                jlong nativePix) {
   PIX *pix = (PIX *) nativePix;

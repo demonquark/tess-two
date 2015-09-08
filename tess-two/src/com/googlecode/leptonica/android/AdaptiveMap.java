@@ -23,6 +23,7 @@ package com.googlecode.leptonica.android;
  */
 public class AdaptiveMap {
     static {
+        System.loadLibrary("pngt");
         System.loadLibrary("lept");
     }
 
@@ -36,6 +37,18 @@ public class AdaptiveMap {
 
     /** Background brightness value; values over 200 may result in clipping */
     private final static int NORM_BG_VALUE = 200;
+
+    // Adaptive contrast normalization constants
+
+    public final static int DEFAULT_TILE_WIDTH = 10;
+
+    public final static int DEFAULT_TILE_HEIGHT = 15;
+
+    public final static int DEFAULT_MIN_COUNT = 40;
+
+    public final static int DEFAULT_X_SMOOTH_SIZE = 2;
+
+    public final static int DEFAULT_Y_SMOOTH_SIZE = 1;
 
     /**
      * Normalizes an image's background using default parameters.
@@ -89,12 +102,26 @@ public class AdaptiveMap {
             throw new IllegalArgumentException("Source pix must be non-null");
 
         long nativePix = nativeBackgroundNormMorph(
-                pixs.mNativePix, normReduction, normSize, normBgValue);
+                pixs.getNativePix(), normReduction, normSize, normBgValue);
 
         if (nativePix == 0)
             throw new RuntimeException("Failed to normalize image background");
 
         return new Pix(nativePix);
+    }
+
+    /**
+     * Adaptively attempts to expand the contrast to the full dynamic range in 
+     * each tile using default parameters.
+     *
+     * @see #pixContrastNorm(Pix, int, int, int, int, int)
+     * 
+     * @param pixs A source pix image
+     * @return a new image with expanded contrast range
+     */
+    public static Pix pixContrastNorm(Pix pixs) {
+        return pixContrastNorm(pixs, DEFAULT_TILE_WIDTH, DEFAULT_TILE_HEIGHT,
+                DEFAULT_MIN_COUNT, DEFAULT_X_SMOOTH_SIZE, DEFAULT_Y_SMOOTH_SIZE);
     }
 
     /**
@@ -139,21 +166,21 @@ public class AdaptiveMap {
             throw new IllegalArgumentException("Source pix must be non-null");
 
         long nativePix = nativePixContrastNorm(
-                pixs.mNativePix, sizeX, sizeY, minDiff, smoothX, smoothY);
+                pixs.getNativePix(), sizeX, sizeY, minDiff, smoothX, smoothY);
 
         if (nativePix == 0)
             throw new RuntimeException("Failed to normalize image contrast");
 
         return new Pix(nativePix);
     }    
-    
+
     // ***************
     // * NATIVE CODE *
     // ***************
 
     private static native long nativeBackgroundNormMorph(
             long nativePix, int reduction, int size, int bgval);
-    
+
     private static native long nativePixContrastNorm(
             long nativePix, int sizeX, int sizeY, int minDiff, int smoothX, int smoothY);
 }

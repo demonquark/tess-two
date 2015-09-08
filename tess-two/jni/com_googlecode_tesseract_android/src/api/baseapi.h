@@ -538,9 +538,11 @@ class TESS_API TessBaseAPI {
    *
    * Returns true if successful, false on error.
    */
-  bool ProcessPages(const char* filename,
-                    const char* retry_config, int timeout_millisec,
-                    TessResultRenderer* renderer);
+  bool ProcessPages(const char* filename, const char* retry_config,
+                    int timeout_millisec, TessResultRenderer* renderer);
+  // Does the real work of ProcessPages.
+  bool ProcessPagesInternal(const char* filename, const char* retry_config,
+                            int timeout_millisec, TessResultRenderer* renderer);
 
   /**
    * Turn a single image into symbolic text.
@@ -579,14 +581,14 @@ class TESS_API TessBaseAPI {
    * The recognized text is returned as a char* which is coded
    * as UTF8 and must be freed with the delete [] operator.
    */
-  char* GetUTF8Text();
+  char* GetUTF8Text(ETEXT_DESC* monitor);
 
   /**
    * Make a HTML-formatted string with hOCR markup from the internal
    * data structures.
    * page_number is 0-based but will appear in the output as 1-based.
    */
-  char* GetHOCRText(int page_number);
+  char* GetHOCRText(int page_number, ETEXT_DESC* monitor);
 
   /**
    * The recognized text is returned as a char* which is coded in the same
@@ -656,6 +658,9 @@ class TESS_API TessBaseAPI {
    * in a separate API at some future time.
    */
   int IsValidWord(const char *word);
+  // Returns true if utf8_character is defined in the UniCharset.
+  bool IsValidCharacter(const char *utf8_character);
+
 
   bool GetTextDirection(int* out_offset, float* out_slope);
 
@@ -874,6 +879,12 @@ class TESS_API TessBaseAPI {
                                  int timeout_millisec,
                                  TessResultRenderer* renderer,
                                  int tessedit_page_number);
+  // There's currently no way to pass a document title from the
+  // Tesseract command line, and we have multiple places that choose
+  // to set the title to an empty string. Using a single named
+  // variable will hopefully reduce confusion if the situation changes
+  // in the future.
+  const char *unknown_title_ = "";
 };  // class TessBaseAPI.
 
 /** Escape a char string - remove &<>"' with HTML codes. */

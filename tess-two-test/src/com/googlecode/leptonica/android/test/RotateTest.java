@@ -56,7 +56,35 @@ public class RotateTest extends TestCase {
         bmp.recycle();
         rotated.recycle();
 
-        assertTrue("Bitmaps match", (match > 0.99f));
+        assertTrue("Bitmaps do not match.", (match > 0.99f));
+    }
+
+    @SmallTest
+    public void testRotateOrth() {
+        Bitmap bmp = Bitmap.createBitmap(100, 100, Bitmap.Config.ARGB_8888);
+        Canvas canvas = new Canvas(bmp);
+        Paint paint = new Paint();
+
+        // Paint the background white
+        canvas.drawColor(Color.WHITE);
+
+        // Paint a black circle in the center
+        paint.setColor(Color.BLACK);
+        paint.setStyle(Style.FILL);
+        canvas.drawCircle(50, 50, 10, paint);
+
+        Pix pixs = ReadFile.readBitmap(bmp);
+        Pix pixd = Rotate.rotateOrth(pixs, 1);
+        pixs.recycle();
+
+        Bitmap rotated = WriteFile.writeBitmap(pixd);
+        pixd.recycle();
+
+        float match = TestUtils.compareBitmaps(bmp, rotated);
+        bmp.recycle();
+        rotated.recycle();
+
+        assertTrue("Bitmaps do not match.", (match > 0.99f));
     }
 
     @SmallTest
@@ -76,8 +104,9 @@ public class RotateTest extends TestCase {
         Pix pixs = ReadFile.readBitmap(bmp);
         Pix pixd = Rotate.rotate(pixs, 180);
         pixs.recycle();
+        bmp.recycle();
 
-        assertTrue("Rotated width is 100", (pixd.getWidth() == 100));
+        assertTrue("Rotated width is not 100.", (pixd.getWidth() == 100));
         pixd.recycle();
     }
 }

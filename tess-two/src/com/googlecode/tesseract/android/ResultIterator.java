@@ -126,4 +126,6 @@ public class ResultIterator extends PageIterator {
     private static native String nativeGetUTF8Text(long nativeResultIterator, int level);
     private static native float nativeConfidence(long nativeResultIterator, int level);
     private static native void nativeDelete(long nativeIterator);
+
 }
+

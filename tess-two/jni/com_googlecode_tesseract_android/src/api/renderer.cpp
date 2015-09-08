@@ -106,13 +106,20 @@ TessTextRenderer::TessTextRenderer(const char *outputbase)
 }
 
 bool TessTextRenderer::AddImageHandler(TessBaseAPI* api) {
-  char* utf8 = api->GetUTF8Text();
+  char* utf8 = api->GetUTF8Text(NULL);
   if (utf8 == NULL) {
     return false;
   }
 
   AppendString(utf8);
   delete[] utf8;
+
+  bool pageBreak = false;
+  api->GetBoolVariable("include_page_breaks", &pageBreak);
+  const char* pageSeparator = api->GetStringVariable("page_separator");
+  if (pageBreak) {
+    AppendString(pageSeparator);
+  }
 
   return true;
 }
@@ -163,7 +170,7 @@ bool TessHOcrRenderer::EndDocumentHandler() {
 }
 
 bool TessHOcrRenderer::AddImageHandler(TessBaseAPI* api) {
-  char* hocr = api->GetHOCRText(imagenum());
+  char* hocr = api->GetHOCRText(imagenum(), NULL);
   if (hocr == NULL) return false;
 
   AppendString(hocr);
