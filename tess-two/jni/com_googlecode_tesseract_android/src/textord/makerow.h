@@ -136,13 +136,11 @@ void fill_heights(TO_ROW *row, float gradient, int min_height,
 float make_single_row(ICOORD page_tr, bool allow_sub_blobs, TO_BLOCK* block,
                       TO_BLOCK_LIST* blocks);
 float make_rows(ICOORD page_tr,              // top right
-                TO_BLOCK_LIST *port_blocks,
-                BOOL8 use_cjk_rows);	 //use cjk approximations of height, ascender and descender values
+                TO_BLOCK_LIST *port_blocks);
 void make_initial_textrows(ICOORD page_tr,
                            TO_BLOCK *block,  // block to do
                            FCOORD rotation,  // for drawing
-                           BOOL8 testing_on,  // correct orientation
-                           BOOL8 use_cjk_rows);	 //use cjk approximations of height, ascender and descender values
+                           BOOL8 testing_on);  // correct orientation
 void fit_lms_line(TO_ROW *row);
 void compute_page_skew(TO_BLOCK_LIST *blocks,  // list of blocks
                        float &page_m,          // average gradient
@@ -153,16 +151,13 @@ void cleanup_rows_making(ICOORD page_tr,     // top right
                          float gradient,     // gradient to fit
                          FCOORD rotation,    // for drawing
                          inT32 block_edge,   // edge of block
-                         BOOL8 testing_on,  // correct orientation
-                         BOOL8 use_cjk_rows);		//use cjk approximations of height, ascender and descender values
-
+                         BOOL8 testing_on);  // correct orientation
 void delete_non_dropout_rows(                   //find lines
                              TO_BLOCK *block,   //block to do
                              float gradient,    //global skew
                              FCOORD rotation,   //deskew vector
                              inT32 block_edge,  //left edge
-                             BOOL8 testing_on,  //correct orientation
-                             BOOL8 use_cjk_rows		//use cjk approximations of height, ascender and descender values
+                             BOOL8 testing_on   //correct orientation
                             );
 BOOL8 find_best_dropout_row(                    //find neighbours
                             TO_ROW *row,        //row to test
@@ -202,12 +197,10 @@ void expand_rows(                   //find lines
                  float gradient,    //gradient to fit
                  FCOORD rotation,   //for drawing
                  inT32 block_edge,  //edge of block
-                 BOOL8 testing_on,  //correct orientation
-                 BOOL8 use_cjk_rows		//use cjk approximations of height, ascender and descender values
+                 BOOL8 testing_on   //correct orientation
                 );
 void adjust_row_limits(                 //tidy limits
-                       TO_BLOCK *block, //block to do
-                       BOOL8 use_cjk_rows		//use cjk approximations of height, ascender and descender values
+                       TO_BLOCK *block  //block to do
                       );
 void compute_row_stats(                  //find lines
                        TO_BLOCK *block,  //block to do
@@ -242,9 +235,7 @@ void separate_underlines(TO_BLOCK *block,  // block to do
 void pre_associate_blobs( ICOORD page_tr,   // top right
                          TO_BLOCK *block,  // block to do
                          FCOORD rotation,  // inverse landscape
-                         BOOL8 testing_on,  // correct orientation
-                         BOOL8 use_cjk_rows);		//use cjk approximations of height, ascender and descender values
-
+                         BOOL8 testing_on);  // correct orientation
 void fit_parallel_rows(TO_BLOCK *block,   // block to do
                        float gradient,    // gradient to fit
                        FCOORD rotation,   // for drawing
@@ -272,32 +263,8 @@ void assign_blobs_to_rows(                      //find lines
                           int pass,             //identification
                           BOOL8 reject_misses,  //chuck big ones out
                           BOOL8 make_new_rows,  //add rows for unmatched
-                          BOOL8 drawing_skew,   //draw smoothed skew
-                          BOOL8 use_cjk_rows			//use cjk approximations of height, ascender and descender values
+                          BOOL8 drawing_skew    //draw smoothed skew
                          );
-
-float get_initial_max_y(BLOBNBOX *blob, BLOBNBOX_IT src_it, float line_size);
-float get_initial_min_y(BLOBNBOX *blob, BLOBNBOX_IT src_it, float line_size);
-void get_box_inside_box(TBOX *box, TBOX *inner_box, TO_ROW *row, TO_BLOCK *block, BOOL8 use_block_in_cjk_check, BOOL8 left_edge);
-void expand_box_using_horz_overlap(TBOX *box, TO_ROW *row, TO_BLOCK *block, BOOL8 use_block_in_cjk_check);
-void expand_box_using_inclusion(TBOX *box, TBOX *include_box);
-BOOL8 expand_box_using_direction(TBOX *core_box, TBOX *box, TO_ROW *row, TO_BLOCK *block, BOOL8 use_block_in_cjk_check, BOOL8 expand_left);
-BOOL8 shrink_box_using_direction(TBOX *core_box, TBOX *box, TO_ROW *row, TO_BLOCK *block, BOOL8 use_block_in_cjk_check, BOOL8 shrink_left);
-BOOL8 shrink_box_using_exclusion(TBOX *core_box, TBOX *box, TBOX *exclude_box, TO_ROW *row, TO_BLOCK *block, BOOL8 use_block_in_cjk_check);
-BOOL8 box_resembles_cjk_noise(TBOX *box, float linesize);
-BOOL8 box_resembles_cjk_ignorable(TBOX *box, float linesize);
-BOOL8 box_resembles_cjk_character(TBOX *box, float linesize);
-BOOL8 box_at_cjk_line_intercept(TBOX *box, TO_ROW *row);
-BOOL8 box_fits_cjk_row(TBOX *core_box, TO_ROW *dest_row, TO_BLOCK *block, BOOL8 use_block_in_cjk_check);
-BOOL8 box_major_y_overlap_in_row(TBOX *box, TO_ROW *row);
-
-void assign_noise_to_cjk_rows(
-                          TO_BLOCK *block,      //block to do
-                          float *gradient,      //block skew
-                          BOOL8 force_add_if_in_row,  // always add a blob if it is in the middle of the row
-                          BOOL8 use_block_in_cjk_check  // use blobs not yet in the row when checking CJK fit
-                          );
-
                                  //find best row
 OVERLAP_STATE most_overlapping_row(TO_ROW_IT *row_it,  //iterator
                                    TO_ROW *&best_row,  //output row

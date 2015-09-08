@@ -35,20 +35,6 @@ class CCStruct : public CUtil {
   static const double kAscenderFraction;   // = 0.25;
   // Derived value giving the x-height as a fraction of cap-height.
   static const double kXHeightCapRatio;    // = XHeight/(XHeight + Ascender).
-
-  // APPROXIMATIONS of the fractions of the CJK character cell taken by
-  // the descenders, ascenders, and x-height.
-  static const double kCJKDescenderFraction;	// = 0.1
-  static const double kCJKXHeightFraction;	// = 0.8
-  static const double kCJKAscenderFraction;	// = 0.1
-  static const double kCJKXHeightCapRatio;	// = CJKXHeight/(CJKXHeight + CJKAscender).
-
-  // APPROXIMATIONS of the fractions used when discarding blobs for CJK purposes
-  // Use the ratio with the block->line_size (expected font size)
-  // Example: if line_size = 80, then a box with width and height below 16 can be treated as noise. (12 = 80 * 0.15)
-  static const double kCJKNoiseLimit;	// = 0.12 Maximum ratio for a noise blob
-  static const double kCJKSmallLimit;	// = 0.5 Maximum ratio for a small blob
-
 };
 
 class Tesseract;

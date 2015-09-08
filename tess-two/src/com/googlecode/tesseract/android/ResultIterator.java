@@ -33,6 +33,7 @@ import com.googlecode.tesseract.android.TessBaseAPI.PageIteratorLevel;
  */
 public class ResultIterator extends PageIterator {
     static {
+        System.loadLibrary("pngt");
         System.loadLibrary("lept");
         System.loadLibrary("tess");
     }
@@ -77,65 +78,52 @@ public class ResultIterator extends PageIterator {
      * @param level the page iterator level. See {@link PageIteratorLevel}.
      * @return A list of pairs with the UTF string and the confidence
      */
-    public List<Pair <String, Double>> getChoicesAndConfidence(int level){
-    	
-    	// get the native choices
-    	String [] nativeChoices = nativeGetChoices(mNativeResultIterator, level, true);
-    	
-    	// create the output list
-    	ArrayList <Pair <String, Double>> pairedResults = new ArrayList <Pair <String, Double>> ();
-    	
-    	for(int i = 0; i < nativeChoices.length; i++ ){
-    		// The string and the confidence level are separated by a '|'
-    		int separatorPosition = nativeChoices[i].lastIndexOf('|');
-    		
-    		// Create a pair with the choices
-    		String utfString = "";
-    		Double confidenceLevel = Double.valueOf(0);
-    		if(separatorPosition > 0){
-    			
-    			// if the string contains a '|' separate the UTF string and the confidence level 
-        		utfString = nativeChoices[i].substring(0, separatorPosition);
-        		try{
-        			confidenceLevel = Double.parseDouble(nativeChoices[i].substring(separatorPosition + 1));
-        		} catch(NumberFormatException e) {
-        			Log.e("ResultIterator","Invalid confidence level for " + nativeChoices[i]);
-        		}
-    		} else {
-    			// if the string contains no '|' just save the full native result as the utfString
-    			utfString = nativeChoices[i];
-    		}
-    		
-    		// add the utf string to the results
-    		pairedResults.add(new Pair <String, Double> (utfString,confidenceLevel));
-    	}
-    	
-    	return pairedResults; 
-    }
-    
-    /**
-     * Returns all possible matching text strings for the current object at the given level.
-     * <p>
-     * The default matching text is blank ("").  
-     *
-     * @param level the page iterator level. See {@link PageIteratorLevel}.
-     * @return A list of strings (contains matches ordered from most likely to least likely)
-     */
-    public List<String> getChoices(int level){
-    	
-    	// get the native choices
-    	String [] nativeChoices = nativeGetChoices(mNativeResultIterator, level, false);
-    	
-    	// create the output list
-    	ArrayList <String> stringResults = new ArrayList <String> ();
-    	
-		// add the utf string to the results
-    	for(int i = 0; i < nativeChoices.length; i++ ){ stringResults.add(nativeChoices[i]); }
-    	
-    	return stringResults;
+    public List<Pair<String, Double>> getChoicesAndConfidence(int level) {
+        // Get the native choices
+        String[] nativeChoices = nativeGetChoices(mNativeResultIterator, level);
+
+        // Create the output list
+        ArrayList<Pair<String, Double>> pairedResults = new ArrayList<Pair<String, Double>>();
+
+        for (int i = 0; i < nativeChoices.length; i++ ) {
+            // The string and the confidence level are separated by a '|'
+            int separatorPosition = nativeChoices[i].lastIndexOf('|');
+
+            // Create a pair with the choices
+            String utfString = "";
+            Double confidenceLevel = Double.valueOf(0);
+            if (separatorPosition > 0) {
+
+                // If the string contains a '|' separate the UTF string and the confidence level
+                utfString = nativeChoices[i].substring(0, separatorPosition);
+                try {
+                    confidenceLevel = Double.parseDouble(nativeChoices[i].substring(separatorPosition + 1));
+                } catch (NumberFormatException e) {
+                    Log.e("ResultIterator","Invalid confidence level for " + nativeChoices[i]);
+                }
+            } else {
+                // If the string contains no '|' then save the full native result as the utfString
+                utfString = nativeChoices[i];
+            }
+
+            // Add the UTF string to the results
+            pairedResults.add(new Pair<String, Double> (utfString, confidenceLevel));
+        }
+
+        return pairedResults;
     }
 
-    private static native String [] nativeGetChoices (long nativeResultIterator, int level, boolean addConfidence); 
+    /**
+     * Deletes the iterator after use
+     */
+    public void delete() {
+        nativeDelete(mNativeResultIterator);
+        return;
+    }
+    
+    private static native String[] nativeGetChoices(long nativeResultIterator, int level);
+
     private static native String nativeGetUTF8Text(long nativeResultIterator, int level);
     private static native float nativeConfidence(long nativeResultIterator, int level);
+    private static native void nativeDelete(long nativeIterator);
 }

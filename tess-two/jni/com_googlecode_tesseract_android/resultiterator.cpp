@@ -49,47 +49,49 @@ jfloat Java_com_googlecode_tesseract_android_ResultIterator_nativeConfidence(JNI
 }
 
 jobjectArray Java_com_googlecode_tesseract_android_ResultIterator_nativeGetChoices(JNIEnv *env,
-    jobject thiz, jint nativeResultIterator, jint level, jboolean addConfidence) {
+    jobject thiz, jlong nativeResultIterator, jint level) {
 
   // Get the actual result iterator and level (as C objects)
   PageIteratorLevel enumLevel = (PageIteratorLevel) level;
   ResultIterator *resultIterator = (ResultIterator *) nativeResultIterator;
-  bool addConf = (bool)(addConfidence != JNI_FALSE);
 
   // Create a choice iterator to determine to the number of alternatives
   tesseract::ChoiceIterator ci(*resultIterator);
   int numberOfAlternatives = 0;
-  do { numberOfAlternatives++; } while(ci.Next());
+  do {
+    numberOfAlternatives++;
+  } while (ci.Next());
 
   // Create a string array to hold the results
   jobjectArray ret = (jobjectArray) env->NewObjectArray(numberOfAlternatives, env->FindClass("java/lang/String"), env->NewStringUTF(""));
 
-  // save each result to the output array
+  // Save each result to the output array
   int i = 0;
   tesseract::ChoiceIterator cb(*resultIterator);
   do {
-	  // create the string output
-	  const char * utfText = cb.GetUTF8Text();
+    // Create the string output
+    const char *utfText = cb.GetUTF8Text();
 
-	  // add each string to the object array elements
-	  if(utfText == NULL){
-		  env->SetObjectArrayElement(ret, i, env->NewStringUTF("?"));
-	  }else if(addConf) {
-		  char newString [strlen(utfText) + 5];
-		  sprintf(newString, "%s|%.2f", utfText, cb.Confidence());
-		  env->SetObjectArrayElement(ret, i, env->NewStringUTF(newString));
-	  } else {
-		  env->SetObjectArrayElement(ret, i, env->NewStringUTF(utfText));
-	  }
+    // Add each string to the object array elements
+    char newString[strlen(utfText) + 5];
+    sprintf(newString, "%s|%.2f", utfText, cb.Confidence());
+    env->SetObjectArrayElement(ret, i, env->NewStringUTF(newString));
 
-	  // move to the next element in the list
-	  i++;
-
+    // Move to the next element in the list
+    i++;
   } while(cb.Next());
 
-  // return the string array
+  // Return the string array
   return ret;
+}
 
+void Java_com_googlecode_tesseract_android_ResultIterator_nativeDelete(JNIEnv *env, jclass clazz,
+    jlong nativeResultIterator) {
+  ResultIterator *resultIterator = (ResultIterator *) nativeResultIterator;
+  if (resultIterator != 0) {
+    delete resultIterator;
+  }
+  return;
 }
 
 #ifdef __cplusplus

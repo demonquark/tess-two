@@ -524,7 +524,7 @@ void BaselineBlock::SetupBlockParameters() const {
 // TODO(rays/joeliu) This entire section of code is inherited from the past
 // and could be improved/eliminated.
 // page_tr is used to size a debug window.
-void BaselineBlock::PrepareForSplineFitting(ICOORD page_tr, bool remove_noise, BOOL8 use_cjk_rows) {
+void BaselineBlock::PrepareForSplineFitting(ICOORD page_tr, bool remove_noise) {
   if (non_text_block_) return;
   if (remove_noise) {
     vigorous_noise_removal(block_);
@@ -532,7 +532,7 @@ void BaselineBlock::PrepareForSplineFitting(ICOORD page_tr, bool remove_noise, B
   FCOORD rotation(1.0f, 0.0f);
   double gradient = tan(skew_angle_);
   separate_underlines(block_, gradient, rotation, true);
-  pre_associate_blobs(page_tr, block_, rotation, true, use_cjk_rows);
+  pre_associate_blobs(page_tr, block_, rotation, true);
 }
 
 // Fits splines to the textlines, or creates fake QSPLINES from the straight
@@ -850,7 +850,7 @@ void BaselineDetect::ComputeBaselineSplinesAndXheights(const ICOORD& page_tr,
   Pix* pix_spline = pix_debug_ ? pixConvertTo32(pix_debug_) : NULL;
   for (int i = 0; i < blocks_.size(); ++i) {
     BaselineBlock* bl_block = blocks_[i];
-    bl_block->PrepareForSplineFitting(page_tr, remove_noise, textord->use_cjk_fp_model());
+    bl_block->PrepareForSplineFitting(page_tr, remove_noise);
     bl_block->FitBaselineSplines(enable_splines, show_final_rows, textord);
     if (pix_spline) {
       bl_block->DrawPixSpline(pix_spline);
